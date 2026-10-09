@@ -61,7 +61,9 @@ type model struct {
 	busy                                       bool
 	cancel                                     context.CancelFunc
 	status                                     string
+	statusError                                bool
 	notice                                     string
+	noticeError                                bool
 	modal                                      *dialog
 	detail                                     string
 	detailIsRecord                             bool
@@ -81,6 +83,11 @@ type model struct {
 	searchHistory                              []*domain.SearchPosition
 	searchSelected, searchTop                  int
 	searchSelectLast                           bool
+}
+
+func (m *model) setStatus(text string, isError bool) {
+	m.status = text
+	m.statusError = isError
 }
 
 // Run owns all database resources for one TUI session.
@@ -147,7 +154,7 @@ func (m *model) operation(fn func(context.Context) tea.Msg) tea.Cmd {
 	m.cancel = cancel
 	m.busy = true
 	m.generation++
-	m.status = "Working… (Esc cancels)"
+	m.setStatus("Working… (Esc cancels)", false)
 	return tea.Batch(m.workers.command(func() tea.Msg { defer cancel(); return fn(ctx) }), pulse(m.generation))
 }
 func (m *model) reload() tea.Cmd {
@@ -156,10 +163,11 @@ func (m *model) reload() tea.Cmd {
 		m.buckets = nil
 		m.page = domain.Page{}
 		m.info = domain.Info{}
-		m.status = "No database open — o opens, c creates"
+		m.setStatus("No database open — o opens, c creates", false)
 		if m.notice != "" {
-			m.status = m.notice
+			m.setStatus(m.notice, m.noticeError)
 			m.notice = ""
+			m.noticeError = false
 		}
 		return nil
 	}
@@ -265,7 +273,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
-			m.status = v.err.Error()
+			m.setStatus(v.err.Error(), true)
 			return m, nil
 		}
 		if v.limit > 0 && v.limit != m.pageSize() {
@@ -289,17 +297,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectLast = false
 		}
 		m.keepRecordVisible()
-		m.status = fmt.Sprintf("%d visible records · %d child buckets", len(m.page.Records), len(m.buckets))
+		m.setStatus(fmt.Sprintf("%d visible records · %d child buckets", len(m.page.Records), len(m.buckets)), false)
 		if m.notice != "" {
 			m.status = m.notice + " · " + m.status
+			m.statusError = m.noticeError
 			m.notice = ""
+			m.noticeError = false
 		}
 		return m, nil
 	case searchLoaded:
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
-			m.status = v.err.Error()
+			m.setStatus(v.err.Error(), true)
 			return m, nil
 		}
 		m.searchPage = v.page
@@ -309,13 +319,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchSelectLast = false
 		}
 		m.keepSearchVisible()
-		m.status = fmt.Sprintf("%d search results · %s", len(v.page.Hits), m.searchKind)
+		m.setStatus(fmt.Sprintf("%d search results · %s", len(v.page.Hits), m.searchKind), false)
 		return m, nil
 	case searchDetail:
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
-			m.status = v.err.Error()
+			m.setStatus(v.err.Error(), true)
 			return m, nil
 		}
 		m.path = v.path
@@ -331,15 +341,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancel = nil
 		if v.err != nil {
 			m.notice = v.text + " " + v.err.Error()
+			m.noticeError = true
 			return m, m.reload()
 		}
 		m.notice = v.text
+		m.noticeError = false
 		return m, m.reload()
 	case opened:
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
-			m.status = v.err.Error()
+			m.setStatus(v.err.Error(), true)
 			return m, nil
 		}
 		m.reset()
@@ -348,7 +360,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
-			m.status = v.err.Error()
+			m.setStatus(v.err.Error(), true)
 			return m, nil
 		}
 		if len(m.path) > 0 {
@@ -501,7 +513,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					idx = (idx + len(names) - 1) % len(names)
 				}
 				if e := m.app.Select(names[idx]); e != nil {
-					m.status = e.Error()
+					m.setStatus(e.Error(), true)
 				} else {
 					m.reset()
 					return m, m.reload()
@@ -523,7 +535,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focus == 1 && len(m.page.Records) > 0 {
 				r := m.page.Records[m.selected]
 				if len(r.Value) > 1<<20 {
-					m.status = "Value exceeds interactive edit limit (1 MiB); use CLI"
+					m.setStatus("Value exceeds interactive edit limit (1 MiB); use CLI", true)
 				} else {
 					m.form("put", "Edit record", field{"Key", editable(r.Key)}, field{"Value", editable(r.Value)})
 				}
@@ -595,7 +607,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
-			m.status = v.err.Error()
+			m.setStatus(v.err.Error(), true)
 		} else {
 			m.showDetail(v.text)
 		}
@@ -697,7 +709,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	value := d.fields[0].value
 	_, db, activeErr := m.app.Active()
 	p := append(domain.Path{}, m.path...)
-	fail := func(e error) (tea.Model, tea.Cmd) { m.status = e.Error(); return m, nil }
+	fail := func(e error) (tea.Model, tea.Cmd) { m.setStatus(e.Error(), true); return m, nil }
 	switch d.kind {
 	case "global-search":
 		term, e := utils.Decode(d.fields[1].value)
@@ -937,7 +949,12 @@ func (m model) View() string {
 	if filters := m.filterStatus(); filters != "" && !m.busy {
 		status = strings.TrimPrefix(filters, " · ") + " · " + status
 	}
-	body.WriteString("\n" + hint.Render(clip(status, width)))
+	statusStyle := hint
+	if m.statusError {
+		statusStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#B45360", Dark: "#F2A6AD"})
+		status = "Error: " + status
+	}
+	body.WriteString("\n" + statusStyle.Render(clip(status, width)))
 	return lipgloss.NewStyle().Padding(1, 2).Render(body.String())
 }
 func clip(s string, width int) string {

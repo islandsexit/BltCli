@@ -6,6 +6,7 @@ import (
 	"bltCli/utils"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -14,6 +15,20 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestErrorNoticeSurvivesReloadAndClearsAfterSuccess(t *testing.T) {
+	m := model{ctx: context.Background(), app: domain.NewApp(), workers: &workers{}, width: 80, height: 24}
+	next, _ := m.Update(finished{text: "Import failed", err: errors.New("invalid input")})
+	m = next.(model)
+	if !m.statusError || !strings.Contains(m.View(), "Error:") || !strings.Contains(m.status, "invalid input") {
+		t.Fatalf("missing error notice: %q", m.status)
+	}
+	next, _ = m.Update(loaded{})
+	m = next.(model)
+	if m.statusError || strings.Contains(m.View(), "Error:") {
+		t.Fatalf("successful load retained error status: %q", m.status)
+	}
+}
 
 func TestNavigationAndDialogs(t *testing.T) {
 	m := model{ctx: context.Background(), app: domain.NewApp(), workers: &workers{}, width: 80, height: 24, buckets: [][]byte{[]byte("users")}, info: domain.Info{Path: "test"}}

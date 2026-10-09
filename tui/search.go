@@ -41,7 +41,7 @@ func pathLabel(path domain.Path) string {
 func (m *model) loadSearch() tea.Cmd {
 	_, db, e := m.app.Active()
 	if e != nil {
-		m.status = e.Error()
+		m.setStatus(e.Error(), true)
 		return nil
 	}
 	q := domain.SearchQuery{Kind: "records", Contains: m.searchTerm, Limit: m.pageSize(), After: m.searchAfter}
@@ -129,7 +129,7 @@ func (m model) updateSearch(key string) (tea.Model, tea.Cmd) {
 		}
 		_, db, e := m.app.Active()
 		if e != nil {
-			m.status = e.Error()
+			m.setStatus(e.Error(), true)
 			return m, nil
 		}
 		return m, m.operation(func(ctx context.Context) tea.Msg {

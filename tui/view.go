@@ -152,6 +152,11 @@ func (m model) filterStatus() string {
 	return " · Filter " + strings.Join(filters, " ")
 }
 func recordLines(rec domain.Record, width int) []string {
+	keys, values := recordParts(rec, width)
+	return append(keys, values...)
+}
+
+func recordParts(rec domain.Record, width int) ([]string, []string) {
 	width = max(8, width)
 	keys := wrapLines(utils.Display(rec.Key, width*3*utf8.UTFMax), width)
 	if len(keys) > 3 {
@@ -163,7 +168,7 @@ func recordLines(rec domain.Record, width int) []string {
 		values = values[:2]
 		values[1] = ansi.Truncate(values[1], width-1, "") + "…"
 	}
-	return append(keys, values...)
+	return keys, values
 }
 func (m *model) keepRecordVisible() {
 	if len(m.page.Records) == 0 {
@@ -368,7 +373,8 @@ func (m model) browserView(accent, muted lipgloss.TerminalColor) string {
 	}
 	row := 0
 	for i := m.recordTop; i < len(m.page.Records) && row < rows; i++ {
-		lines := recordLines(m.page.Records[i], right-4)
+		keys, values := recordParts(m.page.Records[i], right-4)
+		lines := append(keys, values...)
 		for j, line := range lines {
 			if row >= rows {
 				break
@@ -378,13 +384,16 @@ func (m model) browserView(accent, muted lipgloss.TerminalColor) string {
 				mark = "› "
 			}
 			line = pad(mark+line, right-2)
+			style := lipgloss.NewStyle().Foreground(muted)
+			if j < len(keys) {
+				style = lipgloss.NewStyle().Bold(true).Foreground(accent)
+			}
 			if i == m.selected {
 				if m.focus == 1 {
-					line = activeRow.Render(line)
-				} else {
-					line = inactiveRow.Render(line)
+					style = activeRow.Bold(j < len(keys))
 				}
 			}
+			line = style.Render(line)
 			rightLines[row] = line
 			row++
 		}
@@ -407,9 +416,22 @@ func (m model) overlayView(lines []string, offset int, title string, heading lip
 	offset = max(0, min(offset, max(0, len(lines)-height)))
 	var content strings.Builder
 	content.WriteString(heading.Render(title) + "\n")
+	valueStart := len(lines)
+	if title == "DETAILS" && m.detailIsRecord {
+		for i, line := range lines {
+			if strings.HasPrefix(line, "Value (") {
+				valueStart = i
+				break
+			}
+		}
+	}
 	for i := 0; i < height; i++ {
 		if offset+i < len(lines) {
-			content.WriteString(lines[offset+i])
+			line := lines[offset+i]
+			if title == "DETAILS" && m.detailIsRecord && offset+i < valueStart {
+				line = heading.Render(line)
+			}
+			content.WriteString(line)
 		}
 		if i+1 < height {
 			content.WriteByte('\n')

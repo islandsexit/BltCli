@@ -16,6 +16,11 @@ go build -o boltcli ./cmd
 
 On Windows, build with `go build -o boltcli.exe ./cmd` and run `./boltcli.exe`.
 
+The terminal controls the font size; choose a smaller size in its profile
+settings (for example, 12 pt). BoltCLI uses bold accent-colored record keys,
+regular muted values, and pastel red errors. Selected records retain their
+highlighted background, with bold keys and regular values.
+
 ## Development and releases
 
 GNU Make provides `make build`, `make run ARGS=--help`, `make test`,
