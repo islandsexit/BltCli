@@ -46,7 +46,7 @@ List commands default to 100 records and allow 1–10,000 results. When more rec
 | `[` / `]` / `x` | Switch databases / close active database |
 | `Tab`, arrows or `j` / `k` | Change pane and select a row; arrows automatically cross page boundaries |
 | `Enter` / `Backspace` | Open child bucket or inspect record / go to parent |
-| `Esc` | From a record preview or record pane, focus buckets; press again to go to parent |
+| `Esc` | From records or a record preview, focus buckets if populated; otherwise go directly to parent |
 | `n` / `p` or Page Down / Up | Next / previous page in focused pane |
 | `b` / `D` | Create child bucket / delete current bucket and descendants |
 | `r` / `e` / `d` | Insert or replace / edit / delete record |
@@ -66,7 +66,7 @@ The focused pane has a highlighted border and an `[ACTIVE]` heading; `›` marks
 
 CLI substring flags are `--contains` (record key or bucket name) and `--value-contains` (record value). Prefix queries use indexed cursor navigation; substring/value searches may scan the selected bucket. Scans run outside the TUI event loop, check cancellation between records, and copy only the bounded result page. They hold a read transaction during the scan, which can delay page reclamation while a writer is active.
 
-Record keys use the full row width and wrap over up to three table lines; values use up to two additional lines. The table scrolls to keep the selected record visible. Enter displays the **complete readable key**, including keys too long for the table, and a wrapped value preview of up to 64 KiB. Up/Down, Page Up/Down, and Home/End scroll the preview. Export includes the complete value. When the child-bucket panel is empty inside a bucket, focus automatically moves to records; Esc can still explicitly return focus to buckets. `h` opens the full usage guide and preserves the underlying panel or preview when closed.
+Record keys use the full row width and wrap over up to three table lines; values use up to two additional lines. The table scrolls to keep the selected record visible. Enter displays the **complete readable key**, including keys too long for the table, and a wrapped value preview of up to 64 KiB. Up/Down, Page Up/Down, and Home/End scroll the preview. Export includes the complete value. When the child-bucket panel is empty inside a bucket, focus automatically moves to records; Esc from records or their preview goes directly to the parent bucket. `h` opens the full usage guide and preserves the underlying panel or preview when closed.
 
 `g` (or Ctrl+F) opens **database-wide search**. Use Left/Right in the first field to choose record keys, record values, or bucket names; Tab moves to the substring field and Enter runs the search. It includes every root and nested bucket in the active database, independent of the current local filters. Matches are case-sensitive byte substrings and accept text, hex, or base64 input. An empty term lists all entries of the chosen type. Results are paginated, show their bucket path, and support the same automatic arrow navigation. Enter opens a bucket result or shows a record at its location; `o` opens the result's bucket. Esc closes search results. Results are read-only until a match is opened in the normal browser.
 

@@ -423,7 +423,11 @@ func TestEscapeRecordToBucketsToParent(t *testing.T) {
 	if e = db.CreateBucket(p); e != nil {
 		t.Fatal(e)
 	}
+	if e = db.CreateBucket(append(p, []byte("child"))); e != nil {
+		t.Fatal(e)
+	}
 	m := model{ctx: context.Background(), app: app, workers: &workers{}, width: 80, height: 24, path: p, focus: 1, page: domain.Page{Records: []domain.Record{{Key: []byte("key"), Value: []byte("value")}}}}
+	m.buckets = [][]byte{[]byte("child")}
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(model)
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -446,6 +450,43 @@ func TestEscapeRecordToBucketsToParent(t *testing.T) {
 	m = next.(model)
 	if m.focus != 0 || len(m.path) != 1 || cmd != nil {
 		t.Fatal("record browser Esc changed bucket level")
+	}
+}
+
+func TestEscapeEmptyBucketsGoesUpOneLevel(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preview=%t", preview), func(t *testing.T) {
+			app := domain.NewApp()
+			defer app.CloseAll()
+			db, err := adapters.Open(filepath.Join(t.TempDir(), "db"), true, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = app.Add("db", db); err != nil {
+				t.Fatal(err)
+			}
+			path := domain.Path{[]byte("root"), []byte("leaf")}
+			if err = db.CreateBucket(path[:1]); err != nil {
+				t.Fatal(err)
+			}
+			if err = db.CreateBucket(path); err != nil {
+				t.Fatal(err)
+			}
+			m := model{ctx: context.Background(), app: app, workers: &workers{}, width: 80, height: 24, path: path, focus: 1, prefix: []byte("filter")}
+			if preview {
+				m.showDetail("Key: key\nValue (1 bytes):\nv")
+				m.detailIsRecord = true
+			}
+			next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			m = next.(model)
+			if len(m.path) != 1 || string(m.path[0]) != "root" || m.detail != "" || m.detailIsRecord || len(m.prefix) != 0 || cmd == nil {
+				t.Fatal("Esc failed to navigate one level up from empty bucket pane")
+			}
+			m = completeLoad(t, m, cmd)
+			if m.focus != 0 || len(m.buckets) != 1 || string(m.buckets[0]) != "leaf" {
+				t.Fatal("parent buckets were not loaded and focused")
+			}
+		})
 	}
 }
 
@@ -545,8 +586,8 @@ func TestFullRecordNamesAndLeafFocus(t *testing.T) {
 		t.Fatal("record detail does not show complete readable key")
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if next.(model).focus != 0 {
-		t.Fatal("Esc cannot focus empty bucket panel")
+	if len(next.(model).path) != 0 || next.(model).detail != "" {
+		t.Fatal("Esc did not leave leaf bucket and close preview")
 	}
 }
 
@@ -599,9 +640,9 @@ func TestDatabaseSearchUIChoiceAndOpen(t *testing.T) {
 	if m.searchOpen || !m.detailIsRecord || string(m.path[0]) != "first" || !strings.Contains(m.detail, "SUSE-SU-2019:2784-1") {
 		t.Fatal("result did not open its record at correct location")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = next.(model)
-	if m.focus != 0 {
-		t.Fatal("result preview Esc did not return to buckets")
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = completeLoad(t, next.(model), cmd)
+	if m.focus != 0 || len(m.path) != 0 || m.detail != "" || len(m.buckets) != 2 {
+		t.Fatal("result preview Esc did not return to parent buckets")
 	}
 }

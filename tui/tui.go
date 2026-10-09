@@ -400,14 +400,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.detail != "" {
 			if key == "esc" || key == "enter" || key == "q" {
-				if key == "esc" && m.detailIsRecord {
-					m.focus = 0
-					m.keepRecordVisible()
-				}
+				leaveRecord := key == "esc" && m.detailIsRecord
 				m.detail = ""
 				m.detailIsRecord = false
 				m.detailLines = nil
 				m.detailScroll = 0
+				if leaveRecord {
+					return m, m.escapeRecords()
+				}
 			} else {
 				scrollText(key, len(m.detailLines), m.overlayHeight(), &m.detailScroll)
 			}
@@ -435,9 +435,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keepRecordVisible()
 		case "esc":
 			if m.focus == 1 {
-				m.focus = 0
-				m.keepRecordVisible()
-				return m, nil
+				return m, m.escapeRecords()
 			}
 			return m, m.goParent()
 		case "up", "k":

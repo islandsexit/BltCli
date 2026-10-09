@@ -27,7 +27,7 @@ Tab switches between BUCKETS and RECORDS. A › marker shows the selected row.
 Page Up / Page Down or p / n jump between pages. When ↑ returns to a previous page, its last row is selected.
 The last 128 page boundaries are retained for going back; forward browsing remains unlimited.
 Enter in BUCKETS opens a child bucket. The focused bucket pane expands, and the Root label keeps the root bucket visible.
-Esc in RECORDS or a record preview returns focus to BUCKETS. Press Esc again to go to the parent bucket. Backspace also goes to the parent.
+Esc in RECORDS or a record preview focuses BUCKETS if it has rows; when empty, Esc goes directly to the parent bucket. Esc in BUCKETS or Backspace also goes to the parent.
 
 Records and long values
 Enter in RECORDS opens a wrapped value preview. ↑ / ↓ scroll, Page Up / Page Down scroll a screen, and Home / End jump to the beginning or end.
@@ -131,6 +131,15 @@ func (m *model) goParent() tea.Cmd {
 	m.focus = 0
 	m.resetQueries()
 	return m.reload()
+}
+
+func (m *model) escapeRecords() tea.Cmd {
+	if len(m.buckets) == 0 {
+		return m.goParent()
+	}
+	m.focus = 0
+	m.keepRecordVisible()
+	return nil
 }
 func (m model) filterStatus() string {
 	var filters []string
