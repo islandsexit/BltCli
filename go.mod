@@ -1,4 +1,4 @@
-module bltCli
+module github.com/islandsexit/BltCli
 
 go 1.27.2
 

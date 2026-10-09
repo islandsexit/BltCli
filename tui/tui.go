@@ -2,10 +2,6 @@
 package tui
 
 import (
-	"bltCli/domain"
-	"bltCli/repository"
-	"bltCli/repository/adapters"
-	"bltCli/utils"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -13,6 +9,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/repository"
+	"github.com/islandsexit/BltCli/repository/adapters"
+	"github.com/islandsexit/BltCli/utils"
 	"os"
 	"strings"
 	"sync"

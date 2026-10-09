@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"bltCli/domain"
-	"bltCli/utils"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/utils"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

@@ -1,10 +1,10 @@
 package domain_test
 
 import (
-	"bltCli/domain"
-	"bltCli/repository/adapters"
 	"context"
 	"errors"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/repository/adapters"
 	"path/filepath"
 	"testing"
 )

@@ -4,17 +4,41 @@
 
 ## Build and run
 
+### Install with Go
+
+Install directly from GitHub without cloning the repository:
+
+```sh
+go install github.com/islandsexit/BltCli/cmd/boltcli@latest
+boltcli --help
+```
+
+The executable is named `boltcli` (`boltcli.exe` on Windows). Go installs
+it in `GOBIN` when configured, otherwise in `bin` under `GOPATH`
+(usually `$HOME/go/bin` on Linux/macOS or `%USERPROFILE%\go\bin` on Windows).
+Add that directory to PATH to run the command from any directory.
+
+Use `@main` to install the current main branch or a release tag such as
+`@v0.2.0` to install a specific version. `@latest` prefers the latest release
+tag, so publish a new tag after changes to the module path and command layout.
+Existing release tags retain their original code.
+
+Modern Go uses [`go install` for executables](https://go.dev/doc/go-get-install-deprecation);
+`go get` manages dependencies and does not install the application.
+
+For a local checkout, run `make install` or `go install ./cmd/boltcli`.
+
 Use the Go version specified by `go.mod` (currently 1.27.2) or a compatible newer toolchain.
 
 ```sh
-go build -o boltcli ./cmd
+go build -o boltcli ./cmd/boltcli
 ./boltcli --help
 ./boltcli tui
 ./boltcli tui first.db second.db
 ./boltcli tui --read-only first.db
 ```
 
-On Windows, build with `go build -o boltcli.exe ./cmd` and run `./boltcli.exe`.
+On Windows, build with `go build -o boltcli.exe ./cmd/boltcli` and run `./boltcli.exe`.
 
 The terminal controls the font size; choose a smaller size in its profile
 settings (for example, 12 pt). BoltCLI uses bold accent-colored record keys,

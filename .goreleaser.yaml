@@ -11,7 +11,7 @@ before:
 
 builds:
   - id: boltcli
-    main: ./cmd
+    main: ./cmd/boltcli
     binary: boltcli
     env:
       - CGO_ENABLED=0

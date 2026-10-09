@@ -6,6 +6,14 @@ and JSONL import/export.
 
 ## Install
 
+With Go installed:
+
+```sh
+go install github.com/islandsexit/BltCli/cmd/boltcli@latest
+```
+
+Ensure your Go bin directory is on PATH. See [installation details](docs/DEVELOPMENT.md#install-with-go).
+
 Download an archive for Linux, macOS, or Windows from
 [Releases](https://github.com/islandsexit/BltCli/releases), extract it,
 and add `boltcli` to your PATH. Builds are available for amd64 and arm64.
@@ -13,7 +21,7 @@ and add `boltcli` to your PATH. Builds are available for amd64 and arm64.
 To build from source, use the Go version specified in `go.mod`:
 
 ```sh
-go build -o boltcli ./cmd
+go build -o boltcli ./cmd/boltcli
 ```
 
 On Windows, use `-o boltcli.exe`.

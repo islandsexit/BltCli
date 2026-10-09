@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 
-	"bltCli/domain"
+	"github.com/islandsexit/BltCli/domain"
 	bolt "go.etcd.io/bbolt"
 )
 

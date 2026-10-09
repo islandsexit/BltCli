@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"bltCli/domain"
-	"bltCli/repository/adapters"
-	"bltCli/utils"
 	"bytes"
 	"context"
 	"errors"
@@ -11,6 +8,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/repository/adapters"
+	"github.com/islandsexit/BltCli/utils"
 	"path/filepath"
 	"strings"
 	"testing"

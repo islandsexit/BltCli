@@ -7,11 +7,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"bltCli/domain"
-	"bltCli/utils"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/utils"
 )
 
 type searchLoaded struct {

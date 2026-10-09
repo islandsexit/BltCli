@@ -2,13 +2,13 @@
 package main
 
 import (
-	"bltCli/domain"
-	"bltCli/repository/adapters"
 	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/repository/adapters"
 	"os"
 	"os/signal"
 )

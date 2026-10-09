@@ -13,10 +13,13 @@ endif
 
 BINARY := bin/boltcli$(EXE)
 
-.PHONY: build run test vet check fmt bench coverage race tidy clean release-check snapshot release help
+.PHONY: build install run test vet check fmt bench coverage race tidy clean release-check snapshot release help
 
 build: | bin
-	$(GO) build -trimpath -o $(BINARY) ./cmd
+	$(GO) build -trimpath -o $(BINARY) ./cmd/boltcli
+
+install:
+	$(GO) install ./cmd/boltcli
 
 bin:
 ifeq ($(OS),Windows_NT)
@@ -78,6 +81,7 @@ release:
 
 help:
 	@echo build / run ARGS=--help - build or run BoltCLI
+	@echo install - install BoltCLI into the Go bin directory
 	@echo test / vet / check / fmt - development checks
 	@echo bench / coverage / race - performance and test reports
 	@echo tidy / clean - dependencies and generated artifacts

@@ -1,11 +1,11 @@
 package cli_test
 
 import (
-	"bltCli/cli"
-	"bltCli/domain"
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/islandsexit/BltCli/cli"
+	"github.com/islandsexit/BltCli/domain"
 	"os"
 	"path/filepath"
 	"strings"

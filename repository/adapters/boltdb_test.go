@@ -1,12 +1,12 @@
 package adapters_test
 
 import (
-	"bltCli/domain"
-	"bltCli/repository/adapters"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/repository/adapters"
 	"os"
 	"path/filepath"
 	"sync"

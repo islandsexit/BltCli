@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"bltCli/domain"
+	"github.com/islandsexit/BltCli/domain"
 )
 
 func TestDatabaseSearchNestedPaginationAndOwnership(t *testing.T) {
