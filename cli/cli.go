@@ -2,18 +2,18 @@
 package cli
 
 import (
-	"bltCli/config"
-	"bltCli/domain"
-	"bltCli/repository"
-	"bltCli/repository/adapters"
-	"bltCli/tui"
-	"bltCli/utils"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/islandsexit/BltCli/config"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/repository"
+	"github.com/islandsexit/BltCli/repository/adapters"
+	"github.com/islandsexit/BltCli/tui"
+	"github.com/islandsexit/BltCli/utils"
 	"io"
 	"os"
 )

@@ -2,10 +2,10 @@
 package config
 
 import (
-	"bltCli/domain"
-	"bltCli/utils"
 	"flag"
 	"fmt"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/utils"
 	"io"
 	"time"
 )

@@ -2,11 +2,11 @@
 package utils
 
 import (
-	"bltCli/domain"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/islandsexit/BltCli/domain"
 	"strings"
 	"unicode"
 	"unicode/utf8"

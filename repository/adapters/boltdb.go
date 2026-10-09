@@ -2,11 +2,11 @@
 package adapters
 
 import (
-	"bltCli/domain"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/islandsexit/BltCli/domain"
 	bolt "go.etcd.io/bbolt"
 	"os"
 	"path/filepath"

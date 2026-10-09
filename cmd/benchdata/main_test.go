@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bltCli/domain"
-	"bltCli/repository/adapters"
 	"context"
+	"github.com/islandsexit/BltCli/domain"
+	"github.com/islandsexit/BltCli/repository/adapters"
 	"path/filepath"
 	"testing"
 )

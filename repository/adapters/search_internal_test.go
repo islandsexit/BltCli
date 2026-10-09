@@ -1,9 +1,9 @@
 package adapters
 
 import (
-	"bltCli/domain"
 	"context"
 	"fmt"
+	"github.com/islandsexit/BltCli/domain"
 	"path/filepath"
 	"testing"
 )

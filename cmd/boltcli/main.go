@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bltCli/cli"
 	"context"
 	"fmt"
+	"github.com/islandsexit/BltCli/cli"
 	"os"
 	"os/signal"
 )

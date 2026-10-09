@@ -1,5 +1,5 @@
-boltcli
-boltcli.exe
+/boltcli
+/boltcli.exe
 *.test
 *.test.exe
 *.db

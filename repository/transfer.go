@@ -2,12 +2,12 @@
 package repository
 
 import (
-	"bltCli/domain"
 	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/islandsexit/BltCli/domain"
 	"io"
 )
 
