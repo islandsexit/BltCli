@@ -23,6 +23,8 @@ const Help = `BoltCLI — binary-safe BoltDB manager
 
 Usage: boltcli <group> <operation> [flags] [arguments]
        boltcli tui [flags] [database files...]
+       boltcli tui --diff <base.db> <other.db>
+       boltcli diff <base.db> <other.db>
 
   db create <path>             exclusively create a database
   db info --db <path>          inspect file and engine statistics
@@ -86,7 +88,22 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diag io.Writer) 
 	if e = ctx.Err(); e != nil {
 		return e
 	}
+	if c.Diff && group != "tui" {
+		return errors.New("--diff is only supported by tui")
+	}
+	if group == "diff" {
+		if len(c.Args) != 2 || c.DB != "" {
+			return errors.New("usage: boltcli diff <base.db> <other.db>")
+		}
+		return tui.RunDiff(ctx, c.Args[0], c.Args[1])
+	}
 	if group == "tui" {
+		if c.Diff {
+			if len(c.Args) != 2 || c.DB != "" {
+				return errors.New("usage: boltcli tui --diff <base.db> <other.db>")
+			}
+			return tui.RunDiff(ctx, c.Args[0], c.Args[1])
+		}
 		paths := c.Args
 		if c.DB != "" {
 			paths = append([]string{c.DB}, paths...)

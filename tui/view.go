@@ -62,6 +62,11 @@ Destructive dialogs require typing yes. Read-only databases reject writes.
 
 Help and cancellation
 h opens or closes this help outside a text field. F1 also opens help inside a dialog.
+F or Ctrl+D compares the active database with another database path or open session name.
+Diff uses green for BASE and pastel red for OTHER; only differing entries are listed.
+Arrow keys and Page Up/Down browse differences; Enter inspects both sides. Esc returns to the browser.
+Equal databases and databases without identical records at the same path/key show only a summary.
+F2 opens the complete error text, including errors inside a dialog; arrows and Page Up/Down scroll it.
 Esc closes help or the current dialog, or cancels an active operation.
 q quits from the browser. Ctrl+C quits from any screen.
 
@@ -196,7 +201,14 @@ func (m *model) keepRecordVisible() {
 		m.recordTop++
 	}
 }
-func (m model) overlayHeight() int { return max(1, m.height-9) }
+func (m model) statusExtraRows() int {
+	if m.statusError && !m.errorOpen {
+		return 3
+	}
+	return 0
+}
+
+func (m model) overlayHeight() int { return max(1, m.height-9-m.statusExtraRows()) }
 func (m *model) showDetail(text string) {
 	m.detail = text
 	m.detailIsRecord = false
@@ -265,6 +277,9 @@ func fieldLines(value string, pos, width, height int) []string {
 }
 
 func (m model) contextHints() (string, string) {
+	if m.errorOpen {
+		return "↑↓ scroll · PgUp/PgDn page · Home/End", "F2 / Esc close error · Ctrl+C quit"
+	}
 	if m.helpOpen {
 		return "↑↓ scroll · PgUp/PgDn page · Home/End", "h / Esc close help · Ctrl+C quit"
 	}
@@ -283,17 +298,25 @@ func (m model) contextHints() (string, string) {
 			action = "confirm"
 		case "open", "create-db":
 			action = "open database"
+		case "diff":
+			action = "compare databases"
 		}
 		return "←→ edit · Tab field · Ctrl+U clear", "Enter " + action + " · Esc cancel · F1 help"
 	}
+	if m.diffOpen && m.detail == "" {
+		return "↑↓ select · Enter inspect · PgUp/PgDn · Home/End", "Esc close diff · h help · F2 full error"
+	}
 	if m.detail != "" {
+		if m.diffDetail {
+			return "↑↓ scroll · PgUp/PgDn page · Home/End", "Esc differences · h help"
+		}
 		return "↑↓ scroll · PgUp/PgDn page · Home/End", "Esc buckets · Enter close · h help"
 	}
 	if m.searchOpen {
 		return "↑↓ results · Enter open · o bucket", "g change search · Esc back · h help"
 	}
 	if m.info.Path == "" {
-		return "o open database · c create database", "h help · q quit"
+		return "o open database · c create database", "h help · F2 full error · q quit"
 	}
 	if m.focus == 0 {
 		navigation := "↑↓ browse · Enter open · Tab records"
@@ -310,23 +333,23 @@ func (m model) contextHints() (string, string) {
 				actions += " · D delete bucket"
 			}
 		}
-		return navigation, "g find all · / filter · " + actions + " · h help"
+		return navigation, "F diff · g find all · / filter · " + actions + " · h help"
 	}
 	if len(m.path) == 0 {
-		return "Tab buckets · Enter opens a bucket", "g find all · h help · q quit"
+		return "Tab buckets · Enter opens a bucket", "F diff · g find all · h help · q quit"
 	}
 	if len(m.page.Records) == 0 {
 		actions := "/ search · f range"
 		if !m.info.ReadOnly {
 			actions = "r new record · i import · / search"
 		}
-		return actions, "g find all · Esc buckets · h help"
+		return actions, "F diff · g find all · Esc buckets · h help"
 	}
 	actions := "g find all · / filter · v values"
 	if !m.info.ReadOnly {
 		actions = "g find all · / filter · e edit"
 	}
-	return "↑↓ browse · Enter view · Tab buckets", actions + " · h help"
+	return "↑↓ browse · Enter view · Tab buckets", "F diff · " + actions + " · h help"
 }
 
 func (m model) panelView(title string, lines []string, width int, active bool, accent, muted lipgloss.TerminalColor) string {
@@ -377,7 +400,7 @@ func (m model) browserView(accent, muted lipgloss.TerminalColor) string {
 			context[1] = ansi.Truncate(context[1], left-3, "") + "…"
 		}
 	}
-	for i := 0; i < min(2, len(context)); i++ {
+	for i := 0; i < min(rows, 2, len(context)); i++ {
 		leftLines[i] = lipgloss.NewStyle().Foreground(accent).Render(pad(context[i], left-2))
 	}
 	row := 0
@@ -426,6 +449,18 @@ func (m model) overlayView(lines []string, offset int, title string, heading lip
 	var content strings.Builder
 	content.WriteString(heading.Render(title) + "\n")
 	valueStart := len(lines)
+	diffStyle := heading
+	green, red := diffColors()
+	if m.diffDetail {
+		for _, line := range lines[:offset] {
+			if line == "BASE (green):" {
+				diffStyle = green
+			}
+			if line == "OTHER (red):" {
+				diffStyle = red
+			}
+		}
+	}
 	if title == "DETAILS" && m.detailIsRecord {
 		for i, line := range lines {
 			if strings.HasPrefix(line, "Value (") {
@@ -439,6 +474,15 @@ func (m model) overlayView(lines []string, offset int, title string, heading lip
 			line := lines[offset+i]
 			if title == "DETAILS" && m.detailIsRecord && offset+i < valueStart {
 				line = heading.Render(line)
+			}
+			if title == "DETAILS" && m.diffDetail {
+				if line == "BASE (green):" {
+					diffStyle = green
+				}
+				if line == "OTHER (red):" {
+					diffStyle = red
+				}
+				line = diffStyle.Render(line)
 			}
 			content.WriteString(line)
 		}

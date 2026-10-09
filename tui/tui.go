@@ -83,20 +83,54 @@ type model struct {
 	searchHistory                              []*domain.SearchPosition
 	searchSelected, searchTop                  int
 	searchSelectLast                           bool
+	diffDir                                    string
+	initialDiff                                []string
+	diffStore                                  *repository.DiffStore
+	diffBase, diffOther                        string
+	diffEntries                                []domain.DiffEntry
+	diffStart                                  int64
+	diffSelected                               int
+	diffOpen                                   bool
+	diffDetail                                 bool
+	errorOpen                                  bool
+	errorScroll                                int
 }
 
 func (m *model) setStatus(text string, isError bool) {
 	m.status = text
 	m.statusError = isError
+	m.errorOpen = false
+	m.errorScroll = 0
 }
 
 // Run owns all database resources for one TUI session.
 func Run(ctx context.Context, paths []string, readOnly bool) (err error) {
+	return run(ctx, paths, readOnly, nil)
+}
+
+// RunDiff opens a read-only comparison without adding files to the browser session.
+func RunDiff(ctx context.Context, base, other string) error {
+	return run(ctx, nil, true, []string{base, other})
+}
+
+func run(ctx context.Context, paths []string, readOnly bool, initialDiff []string) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	app := domain.NewApp()
 	jobs := &workers{}
-	defer func() { cancel(); jobs.stop(); err = errors.Join(err, app.CloseAll()) }()
+	diffDir, err := os.MkdirTemp("", "boltcli-diff-*")
+	if err != nil {
+		cancel()
+		return err
+	}
+	defer func() { cancel(); jobs.stop(); err = errors.Join(err, app.CloseAll(), os.RemoveAll(diffDir)) }()
 	m := model{ctx: ctx, app: app, workers: jobs, paths: paths, readOnly: readOnly, width: 100, height: 30, busy: len(paths) > 0, status: "Open a database with o, or create one with c"}
+	m.diffDir, m.initialDiff = diffDir, initialDiff
+	if len(initialDiff) == 2 {
+		m.busy = true
+		m.diffBase = initialDiff[0]
+		m.diffOther = initialDiff[1]
+		m.status = "Comparing databases… (Esc cancels)"
+	}
 	_, err = tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx)).Run()
 	return
 }
@@ -126,6 +160,9 @@ func pulse(generation int) tea.Cmd {
 	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return tick{generation: generation} })
 }
 func (m model) Init() tea.Cmd {
+	if len(m.initialDiff) == 2 {
+		return func() tea.Msg { return diffRequested{} }
+	}
 	if len(m.paths) == 0 {
 		return nil
 	}
@@ -201,7 +238,7 @@ func (m *model) reload() tea.Cmd {
 		return loaded{limit: limit, buckets: names, bucketNext: next, page: page, info: info, err: e}
 	})
 }
-func (m model) pageSize() int       { return max(1, min(100, m.height-11)) }
+func (m model) pageSize() int       { return max(1, min(100, m.height-11-m.statusExtraRows())) }
 func (m model) bucketPageSize() int { return max(1, m.pageSize()-2) }
 func (m *model) reset() {
 	m.path = nil
@@ -259,6 +296,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = v.Height
 		m.wrapDetail()
 		if !m.busy {
+			if m.diffOpen {
+				if m.diffStore.Summary.Equal() || m.diffStore.Summary.CompletelyDifferent() {
+					return m, nil
+				}
+				return m, m.diffLoad(m.diffStart, false)
+			}
 			if m.searchOpen && m.modal == nil && m.detail == "" {
 				return m, m.loadSearch()
 			}
@@ -392,6 +435,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if key == "f2" && m.statusError {
+			m.errorOpen = !m.errorOpen
+			m.errorScroll = 0
+			return m, nil
+		}
+		if m.errorOpen {
+			if key == "esc" || key == "q" {
+				m.errorOpen = false
+			} else {
+				scrollText(key, len(wrapLines(m.status, max(1, m.width-4))), m.overlayHeight(), &m.errorScroll)
+			}
+			return m, nil
+		}
 		if m.busy {
 			if key == "esc" && m.cancel != nil {
 				m.cancel()
@@ -405,6 +461,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailIsRecord = false
 				m.detailLines = nil
 				m.detailScroll = 0
+				m.diffDetail = false
 				if leaveRecord {
 					return m, m.escapeRecords()
 				}
@@ -416,10 +473,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.modal != nil {
 			return m.updateDialog(v)
 		}
+		if m.diffOpen {
+			return m.updateDiff(key)
+		}
 		if m.searchOpen {
 			return m.updateSearch(key)
 		}
 		switch key {
+		case "ctrl+d", "F":
+			name, _, err := m.app.Active()
+			if err != nil {
+				m.setStatus("Open a database before comparing", true)
+				return m, nil
+			}
+			m.form("diff", "Compare databases", field{"Other database path (or open database name)", ""})
+			m.diffBase = name
 		case "q":
 			return m, tea.Quit
 		case "g", "ctrl+f":
@@ -609,6 +677,42 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.showDetail(v.text)
 		}
+	case diffRequested:
+		return m, m.startDiff()
+	case diffClosed:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+			return m, nil
+		}
+		return m, m.reload()
+	case diffBuilt:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+			return m, nil
+		}
+		m.diffStore = v.store
+		m.diffEntries = v.entries
+		m.diffStart = 0
+		m.diffSelected = 0
+		m.diffOpen = true
+		m.setStatus(fmt.Sprintf("%d differences · read-only comparison", v.store.Summary.Differences), false)
+	case diffPage:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+			return m, nil
+		}
+		m.diffEntries = v.entries
+		m.diffStart = v.start
+		m.diffSelected = 0
+		if v.last {
+			m.diffSelected = max(0, len(v.entries)-1)
+		}
 	}
 	return m, nil
 }
@@ -709,6 +813,13 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	p := append(domain.Path{}, m.path...)
 	fail := func(e error) (tea.Model, tea.Cmd) { m.setStatus(e.Error(), true); return m, nil }
 	switch d.kind {
+	case "diff":
+		if strings.TrimSpace(value) == "" {
+			return fail(errors.New("database path required"))
+		}
+		m.modal = nil
+		m.diffOther = value
+		return m, m.startDiff()
 	case "global-search":
 		term, e := utils.Decode(d.fields[1].value)
 		if e != nil {
@@ -890,6 +1001,9 @@ func (m model) View() string {
 	name, _, _ := m.app.Active()
 	if name == "" {
 		name = "No database"
+		if m.diffOpen {
+			name = "Database comparison"
+		}
 	}
 	body.WriteString(title.Render("◈ BOLTCLI") + "  " + hint.Render(clip(name, width-14)) + "\n")
 	parts := []string{"Database root"}
@@ -903,13 +1017,20 @@ func (m model) View() string {
 	if m.focus == 1 {
 		focus = "RECORDS"
 	}
+	if m.diffOpen {
+		focus = "DIFF"
+		parts = []string{"Read-only comparison"}
+	}
 	body.WriteString(hint.Render(clip(strings.Join(parts, " / ")+" · Focus: "+focus, width)) + "\n")
 	if m.helpOpen {
 		body.WriteString(m.overlayView(m.helpLines(), m.helpScroll, "HELP", title))
+	} else if m.errorOpen {
+		_, red := diffColors()
+		body.WriteString(m.overlayView(wrapLines(m.status, width), m.errorScroll, "ERROR", red))
 	} else if m.modal != nil {
 		d := m.modal
 		body.WriteString(title.Render(clip(d.title, width)) + "\n")
-		fieldHeight := max(1, (m.height-10-len(d.fields)*2)/len(d.fields))
+		fieldHeight := max(1, (m.height-10-m.statusExtraRows()-len(d.fields)*2)/len(d.fields))
 		for i, f := range d.fields {
 			label := f.label
 			if i == d.selected {
@@ -935,6 +1056,8 @@ func (m model) View() string {
 		body.WriteString(m.overlayView(m.detailLines, m.detailScroll, "DETAILS", title))
 	} else if m.searchOpen {
 		body.WriteString(m.searchView(title))
+	} else if m.diffOpen {
+		body.WriteString(m.diffView(title))
 	} else {
 		body.WriteString(m.browserView(accent, muted))
 	}
@@ -952,7 +1075,19 @@ func (m model) View() string {
 		statusStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#B45360", Dark: "#F2A6AD"})
 		status = "Error: " + status
 	}
-	body.WriteString("\n" + statusStyle.Render(clip(status, width)))
+	if m.errorOpen {
+		body.WriteString("\n" + statusStyle.Render("F2 / Esc closes the error"))
+	} else if m.statusError {
+		lines := wrapLines(status, width)
+		for i := 0; i < min(3, len(lines)); i++ {
+			body.WriteString("\n" + statusStyle.Render(lines[i]))
+		}
+		if len(lines) > 3 {
+			body.WriteString("\n" + statusStyle.Render("F2 opens the complete error"))
+		}
+	} else {
+		body.WriteString("\n" + statusStyle.Render(clip(status, width)))
+	}
 	return lipgloss.NewStyle().Padding(1, 2).Render(body.String())
 }
 func clip(s string, width int) string {

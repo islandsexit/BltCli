@@ -39,6 +39,19 @@ The checked-in benchmarks are a repeatable baseline. They do not demonstrate a c
 
 ## Local baseline
 
+Database comparison has a cursor benchmark:
+
+```sh
+go test ./repository/adapters -run '^$' -bench BenchmarkDiffMostlyEqual -benchmem
+```
+
+It compares 10,000 records with one changed value, including block
+continuations. A short Windows/amd64 sample on the machine below
+(`-benchtime=100ms`) measured about 5.25 ms/op, 11,832 B/op, and 262
+allocations/op. This measures the comparison traversal, excluding disk
+spooling and TUI rendering; it does not establish peak RSS or multi-GB
+performance. Temporary-file usage is proportional to stored differences.
+
 [Raw results](BENCHMARK_BASELINE.txt) were captured on 2026-10-09 using Go 1.27.2, Windows/amd64, and an AMD Ryzen 5 3500U, with `-benchtime 200ms -count 3`. These are short local samples with uncontrolled OS cache state and no competing-tool measurements.
 
 The cursor walk allocated 480 bytes/op and 8 allocations for 1,000 records, versus 576 bytes/op and 9 allocations for 100,000 records. This demonstrates that the iterator does not allocate a record collection in these fixtures; it does not measure peak RSS. A 100-record page allocated about 24 KiB/op, including owned key/value copies. Export of 10,000 records allocated about 1 MiB in total across the operation, reflecting per-record serialization rather than a retained result set. Re-run on the evaluation hardware before drawing timing or large-database conclusions.

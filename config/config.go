@@ -15,6 +15,7 @@ type Config struct {
 	DB, Bucket, Prefix, Start, End, After, Input, Output, Duplicates string
 	Limit, BatchSize, MaxRecord, BatchBytes                          int
 	ReadOnly, Yes                                                    bool
+	Diff                                                             bool
 	Timeout                                                          time.Duration
 	Args                                                             []string
 	LimitSet                                                         bool
@@ -47,6 +48,7 @@ func Parse(args []string, w io.Writer) (Config, error) {
 	f.IntVar(&c.MaxRecord, "max-record-bytes", 16<<20, "maximum JSONL line size")
 	f.IntVar(&c.BatchBytes, "batch-bytes", 8<<20, "decoded bytes per import transaction")
 	f.BoolVar(&c.ReadOnly, "read-only", false, "open database read-only")
+	f.BoolVar(&c.Diff, "diff", false, "compare two databases in the TUI")
 	f.BoolVar(&c.Yes, "yes", false, "confirm destructive operation")
 	f.DurationVar(&c.Timeout, "timeout", 0, "operation timeout (0 disables)")
 	if e := f.Parse(args); e != nil {

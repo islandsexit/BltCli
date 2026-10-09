@@ -53,6 +53,8 @@ List commands default to 100 records and allow 1–10,000 results. When more rec
 | `/` | Filter bucket names in BUCKETS; filter record keys and values in RECORDS |
 | `v` / `P` / `f` | Value substring search / key prefix / inclusive-start, exclusive-end range |
 | `g` / `Ctrl+F` | Search the entire active database: record keys, record values, or bucket names |
+| `F` / `Ctrl+D` | Compare the active database with another file or open database name |
+| `F2` | Open the complete error in a scrollable view |
 | `s` | Database and current bucket statistics |
 | `i` / `E` | Import JSONL / export current search |
 | `Ctrl+R` | Refresh |

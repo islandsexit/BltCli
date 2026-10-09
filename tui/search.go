@@ -175,7 +175,7 @@ func searchHitLines(hit domain.SearchHit, width int) []string {
 	lines = append(lines, location...)
 	return lines
 }
-func (m model) searchHeight() int { return max(1, m.height-9) }
+func (m model) searchHeight() int { return max(1, m.height-9-m.statusExtraRows()) }
 func (m *model) keepSearchVisible() {
 	m.searchTop = max(0, min(m.searchTop, m.searchSelected))
 	width := max(1, m.width-6)

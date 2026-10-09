@@ -54,6 +54,14 @@ func (a *App) Active() (string, BoltDbAdapter, error) {
 	return a.active, db, nil
 }
 
+// Lookup returns a named handle without changing the active database.
+func (a *App) Lookup(name string) (BoltDbAdapter, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	db, ok := a.handles[name]
+	return db, ok
+}
+
 // Names returns sorted open database names.
 func (a *App) Names() []string {
 	a.mu.Lock()

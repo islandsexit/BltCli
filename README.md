@@ -3,6 +3,7 @@
 A CLI and terminal UI for browsing and managing BoltDB databases.
 Supports nested buckets, binary keys and values, database-wide search,
 and JSONL import/export.
+Compare databases with `boltcli tui --diff base.db other.db`.
 
 ## Install
 
@@ -39,6 +40,7 @@ Press `o` to open a database, `c` to create one, and `h` for help in the TUI.
 ## Documentation
 
 - [Usage: CLI, TUI, and import/export](docs/USAGE.md)
+- [Database comparison](docs/DIFF.md)
 - [Development, testing, and releases](docs/DEVELOPMENT.md)
 - [Architecture and limitations](docs/ARCHITECTURE.md)
 - [Performance measurements](docs/PERFORMANCE.md)
