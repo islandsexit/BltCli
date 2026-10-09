@@ -1,0 +1,9 @@
+* text=auto
+.gitattributes text eol=lf
+.gitignore text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+*.go text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+Makefile text eol=lf

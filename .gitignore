@@ -1,0 +1,13 @@
+boltcli
+boltcli.exe
+*.test
+*.test.exe
+*.db
+*.out
+*.prof
+/bin/
+/dist/
+/.tools/
+/coverage.html
+*.exe~
+/.vscode/
