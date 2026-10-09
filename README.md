@@ -40,6 +40,26 @@ replace generated contents of `dist/`.
 
 Signature: Written by Dem4ik.
 
+### First GitHub release
+
+The [release workflow](.github/workflows/release.yml) runs on pushed `v*`
+tags. It tests on Linux, macOS ARM64 (`macos-14`), and Windows, then uses
+GoReleaser on Linux to cross-compile all six configured platform/architecture
+combinations and upload their archives and checksums to GitHub Releases.
+It uses GitHub's automatic `GITHUB_TOKEN`; no personal token is needed.
+
+After committing the workflow, publish the first release with:
+
+```sh
+git push origin main
+git tag -a v0.1.0 -m "First release"
+git push origin v0.1.0
+```
+
+Follow the **Release** run in the repository's **Actions** tab. Once it
+succeeds, download the archives from **Releases**. A prerelease tag such as
+`v0.2.0-rc.1` is marked as a prerelease automatically.
+
 ## CLI examples
 
 Flags precede positional arguments. Each standalone command owns and closes its database handle; opened handles persist only within a TUI session.

@@ -1,6 +1,9 @@
 version: 2
 project_name: boltcli
 
+release:
+  prerelease: auto
+
 before:
   hooks:
     - go test ./...
