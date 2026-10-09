@@ -2,9 +2,43 @@ package utils
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func TestValuePreview(t *testing.T) {
+	input := []byte(`{"Entries":[{"FixedVersion":"版本","Arches":["aarch64"]}],"empty":{},"literal":"a\\\"b"}`)
+	pretty := ValuePreview(input, 64<<10)
+	if !strings.Contains(pretty, "\n  \"Entries\": [\n") || !strings.Contains(pretty, "版本") || !json.Valid([]byte(pretty)) {
+		t.Fatalf("invalid pretty JSON: %s", pretty)
+	}
+	var original, formatted any
+	if err := json.Unmarshal(input, &original); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(pretty), &formatted); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := json.Marshal(original)
+	b, _ := json.Marshal(formatted)
+	if !bytes.Equal(a, b) {
+		t.Fatal("formatting changed JSON data")
+	}
+	yaml := "entries:\n  - version: 1.2\n    arches:\n      - aarch64\n"
+	if got := ValuePreview([]byte(yaml), 64<<10); got != yaml {
+		t.Fatalf("YAML layout changed: %q", got)
+	}
+	for _, input := range [][]byte{{0, 255}, []byte("\x1b[31munsafe")} {
+		if got := ValuePreview(input, 64<<10); got != Display(input, len(input)) {
+			t.Fatalf("unsafe binary preview: %q", got)
+		}
+	}
+	deep := []byte(strings.Repeat("[", 1000) + "0" + strings.Repeat("]", 1000))
+	if got := ValuePreview(deep, 4096); len(got) > 4096+len("\n… (preview truncated)") || !strings.Contains(got, "preview truncated") {
+		t.Fatal("pretty JSON output is not bounded")
+	}
+}
 
 func TestBinaryCodecs(t *testing.T) {
 	for _, s := range []string{"hex:00ff", "base64:AP8="} {

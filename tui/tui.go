@@ -478,7 +478,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.focus == 1 && len(m.page.Records) > 0 {
 				r := m.page.Records[m.selected]
-				m.showDetail(fmt.Sprintf("Key: %s\nValue (%d bytes):\n%s", utils.Display(r.Key, len(r.Key)), len(r.Value), utils.Display(r.Value, 64<<10)))
+				m.showDetail(fmt.Sprintf("Key: %s\nValue (%d bytes):\n%s", utils.Display(r.Key, len(r.Key)), len(r.Value), utils.ValuePreview(r.Value, 64<<10)))
 				m.detailIsRecord = true
 			}
 		case "backspace":

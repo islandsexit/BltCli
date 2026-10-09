@@ -76,6 +76,11 @@ Dialogs accept the same binary encodings as the CLI. Use Tab to change fields, a
 
 ## Import and export format
 
+Record previews pretty-print complete JSON with two-space indentation.
+UTF-8 text, including YAML, keeps its line breaks and indentation without
+extra quotes or escaped newlines. Binary values and terminal controls are
+escaped. Previews remain bounded; formatting never modifies stored data.
+
 JSONL contains one record per line. Both fields are **base64 strings**, including text data. An empty value is `""`; `null` is rejected during import.
 
 ```json

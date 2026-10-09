@@ -143,7 +143,7 @@ func (m model) updateSearch(key string) (tea.Model, tea.Cmd) {
 					return domain.ErrKey
 				}
 				found = true
-				result.text = fmt.Sprintf("Bucket: %s\nKey: %s\nValue (%d bytes):\n%s", pathLabel(hit.Path), utils.Display(key, len(key)), len(value), utils.Display(value, 64<<10))
+				result.text = fmt.Sprintf("Bucket: %s\nKey: %s\nValue (%d bytes):\n%s", pathLabel(hit.Path), utils.Display(key, len(key)), len(value), utils.ValuePreview(value, 64<<10))
 				return nil
 			})
 			if e != nil {
