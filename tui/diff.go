@@ -16,9 +16,10 @@ import (
 )
 
 type diffBuilt struct {
-	store   *repository.DiffStore
-	entries []domain.DiffEntry
-	err     error
+	baseFile, otherFile string
+	store               *repository.DiffStore
+	entries             []domain.DiffEntry
+	err                 error
 }
 type diffPage struct {
 	entries []domain.DiffEntry
@@ -100,6 +101,13 @@ func (m model) diffCommand(ctx context.Context, base, other string) tea.Cmd {
 				result.err = errors.Join(result.err, b.Close())
 			}
 		}()
+		baseInfo, baseErr := a.Info()
+		otherInfo, otherErr := b.Info()
+		if baseErr != nil || otherErr != nil {
+			result.err = errors.Join(baseErr, otherErr)
+			return result
+		}
+		result.baseFile, result.otherFile = baseInfo.Path, otherInfo.Path
 		result.store, result.err = repository.BuildDiff(ctx, m.diffDir, a, b)
 		if result.err == nil && !result.store.Summary.Equal() && !result.store.Summary.CompletelyDifferent() {
 			result.entries, result.err = result.store.Page(ctx, 0, m.diffPageSize())
@@ -165,7 +173,7 @@ func (m model) updateDiff(key string) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(m.diffEntries) > 0 {
 			e := m.diffEntries[m.diffSelected]
-			m.showDetail(fmt.Sprintf("%s\nBucket: %s\nKey: %s\n\nBASE (green):\n%s\n\nOTHER (red):\n%s", e.Kind, pathLabel(e.Path), utils.Display(e.Key, len(e.Key)), diffValue(e, true), diffValue(e, false)))
+			m.showDetail(fmt.Sprintf("%s\nBucket: %s\nKey: %s\n\nBASE (green):\nFile: %s\n%s\n\nOTHER (red):\nFile: %s\n%s", e.Kind, pathLabel(e.Path), utils.Display(e.Key, len(e.Key)), utils.SafeText(m.diffBaseFile), diffValue(e, true), utils.SafeText(m.diffOtherFile), diffValue(e, false)))
 			m.diffDetail = true
 		}
 	}

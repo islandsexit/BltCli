@@ -81,6 +81,9 @@ func TestDiffDialogPaginationDetailsAndReturn(t *testing.T) {
 	if !m.diffDetail || !strings.Contains(m.detail, "BASE (green):") || !strings.Contains(m.detail, "OTHER (red):") {
 		t.Fatal("diff detail missing")
 	}
+	if !strings.Contains(m.detail, "File: "+filepath.Join(dir, "a.db")) || !strings.Contains(m.detail, "File: "+filepath.Join(dir, "b.db")) {
+		t.Fatal("actual file paths missing from diff detail")
+	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = next.(model)
 	if !m.diffOpen || m.detail != "" || len(m.path) != 1 {

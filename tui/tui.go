@@ -87,6 +87,7 @@ type model struct {
 	initialDiff                                []string
 	diffStore                                  *repository.DiffStore
 	diffBase, diffOther                        string
+	diffBaseFile, diffOtherFile                string
 	diffEntries                                []domain.DiffEntry
 	diffStart                                  int64
 	diffSelected                               int
@@ -695,6 +696,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.diffStore = v.store
+		m.diffBaseFile, m.diffOtherFile = v.baseFile, v.otherFile
 		m.diffEntries = v.entries
 		m.diffStart = 0
 		m.diffSelected = 0
@@ -1071,6 +1073,10 @@ func (m model) View() string {
 		status = strings.TrimPrefix(filters, " · ") + " · " + status
 	}
 	statusStyle := hint
+	if m.busy {
+		statusStyle = lipgloss.NewStyle().Bold(true).Background(accent).Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#111827"})
+		status = pad(clip(status, width), width)
+	}
 	if m.statusError {
 		statusStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#B45360", Dark: "#F2A6AD"})
 		status = "Error: " + status
