@@ -10,7 +10,7 @@ Compare databases with `boltcli tui --diff base.db other.db`.
 With Go installed:
 
 ```sh
-go install github.com/islandsexit/BltCli/cmd/boltcli@latest
+go install github.com/islandsexit/BltCli/cmd/boltcli@main
 ```
 
 Ensure your Go bin directory is on PATH. See [installation details](docs/DEVELOPMENT.md#install-with-go).
