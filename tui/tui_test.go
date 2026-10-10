@@ -212,6 +212,12 @@ func TestArrowPaginationBothPanels(t *testing.T) {
 						t.Fatal("loaded a page before reaching its boundary")
 					}
 				} else {
+					if focus == 0 && len(m.buckets) == 0 {
+						t.Fatal("bucket page transition cleared the visible page while loading")
+					}
+					if focus == 1 && len(m.page.Records) == 0 {
+						t.Fatal("record page transition cleared the visible page while loading")
+					}
 					m = completeLoad(t, m, cmd)
 					if focus == 1 && len(m.leadingRecordRows()) == 0 {
 						t.Fatal("record page transition lost the previous viewport tail")

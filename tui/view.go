@@ -101,6 +101,16 @@ func (m *model) changePage(direction int, last bool, smooth ...bool) tea.Cmd {
 		*history = (*history)[:i]
 	}
 	m.recordSmooth = m.focus == 1 && (direction > 0 && len(smooth) > 0 && smooth[0] || direction < 0 && last)
+	m.bucketSmooth = m.focus == 0 && (direction > 0 && len(smooth) > 0 && smooth[0] || direction < 0 && last)
+	if m.bucketSmooth && direction > 0 {
+		left, _ := m.columns()
+		m.bucketLead = nil
+		for _, name := range m.buckets {
+			m.bucketLead = append(m.bucketLead, clip(utils.Display(name, (left-4)*4), left-4))
+		}
+	} else {
+		m.bucketLead = nil
+	}
 	if m.recordSmooth {
 		if direction > 0 {
 			m.recordLead = m.visibleRecordRows()
@@ -416,9 +426,16 @@ func (m model) browserView(accent, muted lipgloss.TerminalColor) string {
 	rightLines := make([]string, rows)
 	activeRow := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#111827"}).Background(accent)
 	inactiveRow := lipgloss.NewStyle().Foreground(muted)
+	leadCount := 0
+	if !m.bucketSmooth && len(m.buckets) > 0 {
+		leadCount = min(len(m.bucketLead), max(0, m.bucketPageSize()-m.bucketSelected-1))
+	}
 	for i := 0; i < rows; i++ {
 		line := ""
-		bucketIndex := i - 2
+		bucketIndex := i - 2 - leadCount
+		if i >= 2 && i-2 < leadCount {
+			line = "  " + m.bucketLead[len(m.bucketLead)-leadCount+i-2]
+		}
 		if bucketIndex >= 0 && bucketIndex < len(m.buckets) {
 			mark := "  "
 			if bucketIndex == m.bucketSelected {

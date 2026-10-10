@@ -74,6 +74,8 @@ type model struct {
 	recordTop                                  int
 	recordLead                                 []recordRow
 	recordSmooth                               bool
+	bucketSmooth                               bool
+	bucketLead                                 []string
 	selectLast                                 bool
 	frame                                      int
 	generation                                 int
@@ -217,8 +219,10 @@ func (m *model) reload() tea.Cmd {
 	bucketContains := m.bucketContains
 	limit := m.pageSize()
 	bucketLimit := m.bucketPageSize()
-	m.buckets = nil
-	m.bucketNext = nil
+	if !m.bucketSmooth {
+		m.buckets = nil
+		m.bucketNext = nil
+	}
 	if !m.recordSmooth {
 		m.page = domain.Page{}
 	}
@@ -256,6 +260,8 @@ func (m *model) reset() {
 	m.resetQueries()
 }
 func (m *model) resetQueries() {
+	m.bucketLead = nil
+	m.bucketSmooth = false
 	m.recordLead = nil
 	m.recordSmooth = false
 	m.after = nil
@@ -323,6 +329,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
+			m.bucketSmooth = false
+			m.bucketLead = nil
 			m.recordSmooth = false
 			m.recordLead = nil
 			m.setStatus(v.err.Error(), true)
@@ -334,6 +342,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.buckets = v.buckets
 		m.bucketNext = v.bucketNext
 		m.page = v.page
+		if m.bucketSmooth {
+			m.bucketSelected = 0
+			m.bucketSmooth = false
+		}
 		if m.recordSmooth {
 			m.selected = 0
 			m.recordTop = 0
@@ -540,7 +552,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.bucketSelected+1 < len(m.buckets) {
 					m.bucketSelected++
 				} else {
-					return m, m.changePage(1, false)
+					return m, m.changePage(1, false, true)
 				}
 			} else {
 				if m.selected+1 < len(m.page.Records) {
