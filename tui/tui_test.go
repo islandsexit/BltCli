@@ -212,16 +212,10 @@ func TestArrowPaginationBothPanels(t *testing.T) {
 						t.Fatal("loaded a page before reaching its boundary")
 					}
 				} else {
-					if focus == 0 && len(m.buckets) == 0 {
-						t.Fatal("bucket page transition cleared the visible page while loading")
-					}
-					if focus == 1 && len(m.page.Records) == 0 {
-						t.Fatal("record page transition cleared the visible page while loading")
+					if len(m.buckets) != 0 || len(m.page.Records) != 0 {
+						t.Fatal("page transition retained rows from the previous page")
 					}
 					m = completeLoad(t, m, cmd)
-					if focus == 1 && len(m.leadingRecordRows()) == 0 {
-						t.Fatal("record page transition lost the previous viewport tail")
-					}
 				}
 			}
 			if focus == 0 {
@@ -242,9 +236,6 @@ func TestArrowPaginationBothPanels(t *testing.T) {
 			} else {
 				if string(m.page.Records[0].Key) != "00" || m.selected != pageLimit-1 {
 					t.Fatal("up did not select last record on previous page")
-				}
-				if len(m.recordLead) != 0 {
-					t.Fatal("backwards navigation retained unrelated leading rows")
 				}
 			}
 		})
@@ -644,6 +635,30 @@ func TestDatabaseSearchUIChoiceAndOpen(t *testing.T) {
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "first") || !strings.Contains(view, "second") {
 		t.Fatal("result locations missing")
 	}
+	oldPage, oldGeneration := m.searchPage, m.generation
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	m = next.(model)
+	if m.modal.fields[1].value != "" {
+		t.Fatal("new search retained the previous query")
+	}
+	m.modal.fields[1].value = "missing-key"
+	next, cmd = m.submit()
+	m = next.(model)
+	if len(m.searchPage.Hits) != 0 {
+		t.Fatal("new search retained old results while loading")
+	}
+	next, _ = m.Update(searchLoaded{page: oldPage, generation: oldGeneration})
+	m = next.(model)
+	if !m.busy || len(m.searchPage.Hits) != 0 {
+		t.Fatal("stale search response replaced the new search")
+	}
+	m = completeLoad(t, m, cmd)
+	if len(m.searchPage.Hits) != 0 {
+		t.Fatal("unmatched search retained previous results")
+	}
+	m.form("global-search", "Find", field{"Type", "record keys"}, field{"Contains", "SUSE"})
+	next, cmd = m.submit()
+	m = completeLoad(t, next.(model), cmd)
 	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(model)
 	commands := cmd().(tea.BatchMsg)

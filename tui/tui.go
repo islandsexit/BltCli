@@ -72,10 +72,6 @@ type model struct {
 	helpOpen                                   bool
 	helpScroll                                 int
 	recordTop                                  int
-	recordLead                                 []recordRow
-	recordSmooth                               bool
-	bucketSmooth                               bool
-	bucketLead                                 []string
 	selectLast                                 bool
 	frame                                      int
 	generation                                 int
@@ -219,13 +215,9 @@ func (m *model) reload() tea.Cmd {
 	bucketContains := m.bucketContains
 	limit := m.pageSize()
 	bucketLimit := m.bucketPageSize()
-	if !m.bucketSmooth {
-		m.buckets = nil
-		m.bucketNext = nil
-	}
-	if !m.recordSmooth {
-		m.page = domain.Page{}
-	}
+	m.buckets = nil
+	m.bucketNext = nil
+	m.page = domain.Page{}
 	return m.operation(func(ctx context.Context) tea.Msg {
 		info, e := db.Info()
 		if e != nil {
@@ -260,10 +252,6 @@ func (m *model) reset() {
 	m.resetQueries()
 }
 func (m *model) resetQueries() {
-	m.bucketLead = nil
-	m.bucketSmooth = false
-	m.recordLead = nil
-	m.recordSmooth = false
 	m.after = nil
 	m.bucketAfter = nil
 	m.history = nil
@@ -329,10 +317,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
-			m.bucketSmooth = false
-			m.bucketLead = nil
-			m.recordSmooth = false
-			m.recordLead = nil
 			m.setStatus(v.err.Error(), true)
 			return m, nil
 		}
@@ -342,15 +326,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.buckets = v.buckets
 		m.bucketNext = v.bucketNext
 		m.page = v.page
-		if m.bucketSmooth {
-			m.bucketSelected = 0
-			m.bucketSmooth = false
-		}
-		if m.recordSmooth {
-			m.selected = 0
-			m.recordTop = 0
-			m.recordSmooth = false
-		}
 		m.info = v.info
 		if len(m.path) > 0 && len(m.buckets) == 0 {
 			m.focus = 1
@@ -375,6 +350,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case searchLoaded:
+		if v.generation != m.generation {
+			return m, nil
+		}
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
@@ -522,7 +500,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if kind == "" {
 					kind = "record keys"
 				}
-				m.form("global-search", "Find in entire database", field{"Type (←→ choose records, values, buckets)", kind}, field{"Contains (empty lists all)", filterInput(m.searchTerm)})
+				m.form("global-search", "Find in entire database", field{"Type (←→ choose records, values, buckets)", kind}, field{"Contains (empty lists all)", ""})
 			}
 		case "tab":
 			m.focus = 1 - m.focus
@@ -552,14 +530,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.bucketSelected+1 < len(m.buckets) {
 					m.bucketSelected++
 				} else {
-					return m, m.changePage(1, false, true)
+					return m, m.changePage(1, false)
 				}
 			} else {
 				if m.selected+1 < len(m.page.Records) {
 					m.selected++
 					m.keepRecordVisible()
 				} else {
-					return m, m.changePage(1, false, true)
+					return m, m.changePage(1, false)
 				}
 			}
 		case "enter":
@@ -858,6 +836,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		m.searchHistory = nil
 		m.searchSelected = 0
 		m.searchTop = 0
+		m.searchSelectLast = false
+		m.searchPage = domain.SearchPage{}
 		m.searchOpen = true
 		m.modal = nil
 		return m, m.loadSearch()

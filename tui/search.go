@@ -15,8 +15,9 @@ import (
 )
 
 type searchLoaded struct {
-	page domain.SearchPage
-	err  error
+	page       domain.SearchPage
+	err        error
+	generation int
 }
 type searchDetail struct {
 	text string
@@ -39,6 +40,7 @@ func pathLabel(path domain.Path) string {
 	return out.String()
 }
 func (m *model) loadSearch() tea.Cmd {
+	m.searchPage = domain.SearchPage{}
 	_, db, e := m.app.Active()
 	if e != nil {
 		m.setStatus(e.Error(), true)
@@ -51,10 +53,10 @@ func (m *model) loadSearch() tea.Cmd {
 		q.Contains = nil
 		q.ValueContains = m.searchTerm
 	}
-	m.searchPage = domain.SearchPage{}
+	generation := m.generation + 1
 	return m.operation(func(ctx context.Context) tea.Msg {
 		page, e := db.Search(ctx, q)
-		return searchLoaded{page: page, err: e}
+		return searchLoaded{page: page, err: e, generation: generation}
 	})
 }
 func (m *model) searchChangePage(direction int, last bool) tea.Cmd {
@@ -110,7 +112,7 @@ func (m model) updateSearch(key string) (tea.Model, tea.Cmd) {
 	case "ctrl+r":
 		return m, m.loadSearch()
 	case "g", "ctrl+f":
-		m.form("global-search", "Find in entire database", field{"Type (←→ choose records, values, buckets)", m.searchKind}, field{"Contains (empty lists all)", filterInput(m.searchTerm)})
+		m.form("global-search", "Find in entire database", field{"Type (←→ choose records, values, buckets)", m.searchKind}, field{"Contains (empty lists all)", ""})
 	case "enter", "o":
 		if len(m.searchPage.Hits) == 0 {
 			return m, nil

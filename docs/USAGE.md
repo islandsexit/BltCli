@@ -44,7 +44,7 @@ List commands default to 100 records and allow 1–10,000 results. When more rec
 | --- | --- |
 | `o` / `c` | Open / exclusively create a database |
 | `[` / `]` / `x` | Switch databases / close active database |
-| `Tab`, arrows or `j` / `k` | Change pane and select a row; arrows continue scrolling across page boundaries in both panes |
+| `Tab`, arrows or `j` / `k` | Change pane and select a row; at a page boundary, arrows load the next or previous page without blending pages |
 | `Enter` / `Backspace` | Open child bucket or inspect record / go to parent |
 | `Esc` | From records or a record preview, focus buckets if populated; otherwise go directly to parent |
 | `n` / `p` or Page Down / Up | Next / previous page in focused pane |
