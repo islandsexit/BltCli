@@ -73,7 +73,7 @@ q quits from the browser. Ctrl+C quits from any screen.
 Signature: Written by Dem4ik
 `
 
-func (m *model) changePage(direction int, last bool) tea.Cmd {
+func (m *model) changePage(direction int, last bool, smooth ...bool) tea.Cmd {
 	history, after, next := &m.history, &m.after, m.page.Next
 	selection := &m.selected
 	if m.focus == 0 {
@@ -100,8 +100,18 @@ func (m *model) changePage(direction int, last bool) tea.Cmd {
 		(*history)[i] = nil
 		*history = (*history)[:i]
 	}
-	*selection = 0
-	m.recordTop = 0
+	m.recordSmooth = m.focus == 1 && (direction > 0 && len(smooth) > 0 && smooth[0] || direction < 0 && last)
+	if m.recordSmooth {
+		if direction > 0 {
+			m.recordLead = m.visibleRecordRows()
+		} else {
+			m.recordLead = nil
+		}
+	} else {
+		m.recordLead = nil
+		*selection = 0
+		m.recordTop = 0
+	}
 	m.selectLast = direction < 0 && last
 	return m.reload()
 }
@@ -122,6 +132,8 @@ func filterInput(b []byte) string {
 	return editable(b)
 }
 func (m *model) resetRecordPage() {
+	m.recordLead = nil
+	m.recordSmooth = false
 	m.after = nil
 	m.history = nil
 	m.selected = 0
@@ -168,6 +180,39 @@ func (m model) filterStatus() string {
 func recordLines(rec domain.Record, width int) []string {
 	keys, values := recordParts(rec, width)
 	return append(keys, values...)
+}
+
+type recordRow struct {
+	text string
+	key  bool
+}
+
+func (m model) leadingRecordRows() []recordRow {
+	if m.recordSmooth || m.recordTop > 0 || len(m.page.Records) == 0 {
+		return nil
+	}
+	_, right := m.columns()
+	used := 0
+	for i := 0; i <= m.selected && i < len(m.page.Records); i++ {
+		used += len(recordLines(m.page.Records[i], right-4))
+	}
+	count := min(len(m.recordLead), max(0, m.pageSize()-used))
+	return m.recordLead[len(m.recordLead)-count:]
+}
+
+func (m model) visibleRecordRows() []recordRow {
+	_, right := m.columns()
+	rows := append([]recordRow(nil), m.leadingRecordRows()...)
+	for i := m.recordTop; i < len(m.page.Records) && len(rows) < m.pageSize(); i++ {
+		keys, values := recordParts(m.page.Records[i], right-4)
+		for j, text := range append(keys, values...) {
+			if len(rows) >= m.pageSize() {
+				break
+			}
+			rows = append(rows, recordRow{text: text, key: j < len(keys)})
+		}
+	}
+	return rows
 }
 
 func recordParts(rec domain.Record, width int) ([]string, []string) {
@@ -404,6 +449,14 @@ func (m model) browserView(accent, muted lipgloss.TerminalColor) string {
 		leftLines[i] = lipgloss.NewStyle().Foreground(accent).Render(pad(context[i], left-2))
 	}
 	row := 0
+	for _, lead := range m.leadingRecordRows() {
+		style := lipgloss.NewStyle().Foreground(muted)
+		if lead.key {
+			style = lipgloss.NewStyle().Bold(true).Foreground(accent)
+		}
+		rightLines[row] = style.Render(pad("  "+clip(lead.text, right-4), right-2))
+		row++
+	}
 	for i := m.recordTop; i < len(m.page.Records) && row < rows; i++ {
 		keys, values := recordParts(m.page.Records[i], right-4)
 		lines := append(keys, values...)

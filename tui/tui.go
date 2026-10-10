@@ -72,6 +72,8 @@ type model struct {
 	helpOpen                                   bool
 	helpScroll                                 int
 	recordTop                                  int
+	recordLead                                 []recordRow
+	recordSmooth                               bool
 	selectLast                                 bool
 	frame                                      int
 	generation                                 int
@@ -217,7 +219,9 @@ func (m *model) reload() tea.Cmd {
 	bucketLimit := m.bucketPageSize()
 	m.buckets = nil
 	m.bucketNext = nil
-	m.page = domain.Page{}
+	if !m.recordSmooth {
+		m.page = domain.Page{}
+	}
 	return m.operation(func(ctx context.Context) tea.Msg {
 		info, e := db.Info()
 		if e != nil {
@@ -252,6 +256,8 @@ func (m *model) reset() {
 	m.resetQueries()
 }
 func (m *model) resetQueries() {
+	m.recordLead = nil
+	m.recordSmooth = false
 	m.after = nil
 	m.bucketAfter = nil
 	m.history = nil
@@ -317,6 +323,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.cancel = nil
 		if v.err != nil {
+			m.recordSmooth = false
+			m.recordLead = nil
 			m.setStatus(v.err.Error(), true)
 			return m, nil
 		}
@@ -326,6 +334,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.buckets = v.buckets
 		m.bucketNext = v.bucketNext
 		m.page = v.page
+		if m.recordSmooth {
+			m.selected = 0
+			m.recordTop = 0
+			m.recordSmooth = false
+		}
 		m.info = v.info
 		if len(m.path) > 0 && len(m.buckets) == 0 {
 			m.focus = 1
@@ -534,7 +547,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selected++
 					m.keepRecordVisible()
 				} else {
-					return m, m.changePage(1, false)
+					return m, m.changePage(1, false, true)
 				}
 			}
 		case "enter":

@@ -213,6 +213,9 @@ func TestArrowPaginationBothPanels(t *testing.T) {
 					}
 				} else {
 					m = completeLoad(t, m, cmd)
+					if focus == 1 && len(m.leadingRecordRows()) == 0 {
+						t.Fatal("record page transition lost the previous viewport tail")
+					}
 				}
 			}
 			if focus == 0 {
@@ -233,6 +236,9 @@ func TestArrowPaginationBothPanels(t *testing.T) {
 			} else {
 				if string(m.page.Records[0].Key) != "00" || m.selected != pageLimit-1 {
 					t.Fatal("up did not select last record on previous page")
+				}
+				if len(m.recordLead) != 0 {
+					t.Fatal("backwards navigation retained unrelated leading rows")
 				}
 			}
 		})
