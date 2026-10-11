@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestValuePreview(t *testing.T) {
@@ -67,5 +68,27 @@ func FuzzDecode(f *testing.F) {
 		}
 		_, _ = Decode(s)
 		_, _ = ParsePath(s)
+	})
+}
+
+func FuzzValuePreview(f *testing.F) {
+	f.Add([]byte(`{"ключ":["界",true,null]}`), uint16(128))
+	f.Add([]byte{0, 27, 255}, uint16(8))
+	f.Add([]byte("name: demo\nitems:\n  - first\n"), uint16(16))
+	f.Fuzz(func(t *testing.T, value []byte, requested uint16) {
+		if len(value) > 4096 {
+			t.Skip()
+		}
+		limit := 1 + int(requested)%2048
+		preview := ValuePreview(value, limit)
+		if !utf8.ValidString(preview) {
+			t.Fatal("preview split a UTF-8 sequence")
+		}
+		if strings.ContainsRune(preview, '\x1b') {
+			t.Fatal("preview leaked terminal escape")
+		}
+		if len(preview) > 4*limit+128 {
+			t.Fatalf("unbounded preview: %d bytes for limit %d", len(preview), limit)
+		}
 	})
 }

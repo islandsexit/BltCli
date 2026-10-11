@@ -413,10 +413,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.path) > 0 {
 			m.path = m.path[:len(m.path)-1]
 		}
-		m.after = nil
-		m.bucketAfter = nil
-		m.history = nil
-		m.bucketHistory = nil
+		m.resetQueries()
 		return m, m.reload()
 	case tea.KeyMsg:
 		key := v.String()
@@ -426,7 +423,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		}
-		if key == "f1" || key == "h" && m.modal == nil {
+		if key == "f1" || key == "h" && (m.modal == nil || m.helpOpen) {
 			m.helpOpen = !m.helpOpen
 			m.helpScroll = 0
 			return m, nil
@@ -482,6 +479,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.searchOpen {
 			return m.updateSearch(key)
+		}
+		if m.info.ReadOnly {
+			switch key {
+			case "b", "D", "r", "e", "d", "i":
+				m.setStatus("Database is read-only; editing and importing are disabled", true)
+				return m, nil
+			}
 		}
 		switch key {
 		case "ctrl+d", "F":
@@ -981,12 +985,19 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		q := domain.Query{Prefix: m.prefix, Start: m.start, End: m.end, Contains: m.keyContains, ValueContains: m.valueContains}
 		m.modal = nil
 		return m, m.operation(func(ctx context.Context) tea.Msg {
+			if e := ctx.Err(); e != nil {
+				return finished{text: "Export cancelled:", err: e}
+			}
 			f, e := os.OpenFile(value, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 			if e != nil {
 				return finished{err: e}
 			}
 			e = repository.Export(ctx, db, p, q, f)
-			return finished{text: "Export completed", err: errors.Join(e, f.Close())}
+			e = errors.Join(e, f.Close())
+			if e != nil {
+				return finished{text: "Export failed; partial output file kept:", err: e}
+			}
+			return finished{text: "Export completed"}
 		})
 	}
 	return m, nil
@@ -1027,6 +1038,9 @@ func (m model) View() string {
 	if m.diffOpen {
 		focus = "DIFF"
 		parts = []string{"Read-only comparison"}
+	}
+	if m.info.ReadOnly && !m.diffOpen {
+		focus += " · READ ONLY"
 	}
 	body.WriteString(hint.Render(clip(strings.Join(parts, " / ")+" · Focus: "+focus, width)) + "\n")
 	if m.helpOpen {
@@ -1090,11 +1104,20 @@ func (m model) View() string {
 		body.WriteString("\n" + statusStyle.Render("F2 / Esc closes the error"))
 	} else if m.statusError {
 		lines := wrapLines(status, width)
-		for i := 0; i < min(3, len(lines)); i++ {
+		available := max(1, m.height-2-lipgloss.Height(body.String()))
+		count := min(3, len(lines), available)
+		if len(lines) > count && available == count {
+			count--
+		}
+		for i := 0; i < count; i++ {
 			body.WriteString("\n" + statusStyle.Render(lines[i]))
 		}
-		if len(lines) > 3 {
-			body.WriteString("\n" + statusStyle.Render("F2 opens the complete error"))
+		if len(lines) > count {
+			message := "F2 opens the complete error"
+			if count == 0 {
+				message = "Error: " + message
+			}
+			body.WriteString("\n" + statusStyle.Render(message))
 		}
 	} else {
 		body.WriteString("\n" + statusStyle.Render(clip(status, width)))

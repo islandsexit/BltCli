@@ -74,7 +74,9 @@ Record keys use the full row width and wrap over up to three table lines; values
 
 Database-wide search retains only the requested page and a bounded value preview, with at most 128 previous-page checkpoints. It closes its read transaction after at most 1,024 inspected entries and resumes with a binary-safe path/key checkpoint. This bounds per-transaction bucket caches and permits page reclamation during long scans. Searches check cancellation during traversal. Results across scan blocks and later pages are not a single atomic snapshot: concurrent writes can change later matches. No entire database or record collection is loaded into memory.
 
-Dialogs accept the same binary encodings as the CLI. Use Tab to change fields, arrows/Home/End to move the cursor, Ctrl+U to clear a field, and Enter to submit. Long fields wrap and scroll to keep the cursor visible. In a text field, `h` types a character; `F1` opens help. Deletions require typing `yes`. Editing opens printable UTF-8 as `text:` and other data as `hex:` to preserve bytes exactly. Terminal controls in stored data are escaped. Themes adapt to the terminal background.
+Dialogs accept the same binary encodings as the CLI. Use Tab to change fields, arrows/Home/End to move the cursor, Ctrl+U to clear a field, and Enter to submit. Long fields wrap and scroll to keep the cursor visible. In a text field, `h` types a character; `F1` opens help, and `h` or Esc closes help while preserving the dialog. Deletions require typing `yes`. Editing opens printable UTF-8 as `text:` and other data as `hex:` to preserve bytes exactly. Terminal controls in stored data are escaped. Themes adapt to the terminal background.
+
+Read-only databases show `READ ONLY` in the context line. Mutation hotkeys explain the restriction immediately; browsing, search, diff and export remain available. Error messages adapt to the available screen space; F2 opens the complete message when it does not fit.
 
 ## Import and export format
 

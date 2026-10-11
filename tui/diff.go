@@ -230,7 +230,7 @@ func (m model) diffView(title lipgloss.Style) string {
 		if summary.Records == 0 {
 			out.WriteString("No identical buckets.\n")
 		} else {
-			out.WriteString("No identical records at the same bucket path and key.\n")
+			out.WriteString("No identical records at matching paths.\n")
 		}
 		return out.String()
 	}
@@ -248,7 +248,10 @@ func (m model) diffView(title lipgloss.Style) string {
 		heading := lipgloss.NewStyle().Bold(i == m.diffSelected)
 		out.WriteString(heading.Render(clip(marker+e.Kind+" · "+label, width)) + "\n")
 		out.WriteString(green.Render(clip("  BASE  · "+strings.ReplaceAll(diffValue(e, true), "\n", " "), width)) + "\n")
-		out.WriteString(red.Render(clip("  OTHER · "+strings.ReplaceAll(diffValue(e, false), "\n", " "), width)) + "\n\n")
+		out.WriteString(red.Render(clip("  OTHER · "+strings.ReplaceAll(diffValue(e, false), "\n", " "), width)) + "\n")
+		if m.height >= 15+m.statusExtraRows() {
+			out.WriteByte('\n')
+		}
 	}
 	out.WriteString(fmt.Sprintf("Differences %d–%d of %d", min(m.diffStart+1, m.diffStore.Count), m.diffStart+int64(len(m.diffEntries)), m.diffStore.Count))
 	return out.String()
