@@ -60,8 +60,13 @@ func TestDiffDialogPaginationDetailsAndReturn(t *testing.T) {
 	m.modal.fields[0].value = "other"
 	next, cmd := m.submit()
 	m = completeLoad(t, next.(model), cmd)
-	if !m.diffOpen || m.diffStore.Count != 20 || len(m.diffEntries) != m.diffPageSize() {
+	if !m.diffOpen || m.diffStore.Count != 20 || len(m.diffBrowse.Buckets) != 1 || len(m.diffEntries) != 0 {
 		t.Fatal("diff did not open a bounded page")
+	}
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = completeLoad(t, next.(model), cmd)
+	if len(m.diffPath) != 1 || len(m.diffEntries) != m.diffPageSize() {
+		t.Fatal("bucket did not open")
 	}
 	name, _, _ := app.Active()
 	if name != "base" {
@@ -90,6 +95,11 @@ func TestDiffDialogPaginationDetailsAndReturn(t *testing.T) {
 		t.Fatal("Esc from detail changed underlying browser")
 	}
 	store := m.diffStore
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = completeLoad(t, next.(model), cmd)
+	if len(m.diffPath) != 0 || len(m.diffBrowse.Buckets) != 1 {
+		t.Fatal("parent navigation failed")
+	}
 	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = next.(model)
 	commands := cmd().(tea.BatchMsg)

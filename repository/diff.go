@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"time"
 
 	"github.com/islandsexit/BltCli/domain"
 	"github.com/islandsexit/BltCli/repository/adapters"
@@ -34,6 +35,13 @@ func (w *countedWriter) Write(p []byte) (int, error) {
 
 // BuildDiff writes a disk-backed comparison, discarding rows for summary-only results.
 func BuildDiff(ctx context.Context, dir string, a, b *adapters.BoltDBAdapter) (store *DiffStore, err error) {
+	return BuildDiffWithProgress(ctx, dir, a, b, nil)
+}
+
+// BuildDiffWithProgress compares first, then indexes bounded batches after all
+// source read transactions have closed. Progress callbacks must return promptly.
+func BuildDiffWithProgress(ctx context.Context, dir string, a, b *adapters.BoltDBAdapter, progress func(domain.DiffProgress)) (store *DiffStore, err error) {
+	started := time.Now()
 	data, err := os.CreateTemp(dir, "diff-*.jsonl")
 	if err != nil {
 		return nil, err
@@ -46,7 +54,7 @@ func BuildDiff(ctx context.Context, dir string, a, b *adapters.BoltDBAdapter) (s
 	defer func() {
 		err = errors.Join(err, data.Close(), index.Close())
 		if err != nil {
-			err = errors.Join(err, os.Remove(store.Path), os.Remove(store.Index))
+			err = errors.Join(err, store.Remove())
 			store = nil
 		} else if store.Summary.Equal() || store.Summary.CompletelyDifferent() {
 			err = store.Remove()
@@ -55,7 +63,12 @@ func BuildDiff(ctx context.Context, dir string, a, b *adapters.BoltDBAdapter) (s
 	dw, iw := bufio.NewWriterSize(data, 64<<10), bufio.NewWriterSize(index, 64<<10)
 	cw := &countedWriter{w: dw}
 	encoder := json.NewEncoder(cw)
-	store.Summary, err = adapters.Diff(ctx, a, b, func(entry domain.DiffEntry) error {
+	var comparison domain.DiffProgress
+	observe := progress
+	if progress != nil {
+		observe = func(p domain.DiffProgress) { comparison = p; progress(p) }
+	}
+	store.Summary, err = adapters.DiffWithProgress(ctx, a, b, func(entry domain.DiffEntry) error {
 		var offset [8]byte
 		binary.LittleEndian.PutUint64(offset[:], cw.n)
 		if _, e := iw.Write(offset[:]); e != nil {
@@ -66,11 +79,20 @@ func BuildDiff(ctx context.Context, dir string, a, b *adapters.BoltDBAdapter) (s
 		}
 		store.Count++
 		return nil
-	})
+	}, observe)
 	if err != nil {
 		return store, err
 	}
 	err = errors.Join(dw.Flush(), iw.Flush())
+	if err != nil {
+		return store, err
+	}
+	if !store.Summary.Equal() && !store.Summary.CompletelyDifferent() {
+		err = store.buildBrowse(ctx, started, comparison.Compared, progress)
+	}
+	if err == nil && progress != nil {
+		progress(domain.DiffProgress{Phase: "done", Compared: comparison.Compared, Differences: store.Summary.Differences, Indexed: store.Count, IndexTotal: store.Count, Elapsed: time.Since(started)})
+	}
 	return store, err
 }
 
@@ -130,5 +152,5 @@ func (s *DiffStore) Remove() error {
 		}
 		return err
 	}
-	return errors.Join(remove(s.Path), remove(s.Index))
+	return errors.Join(remove(s.Path), remove(s.Index), remove(s.Index+".browse"))
 }

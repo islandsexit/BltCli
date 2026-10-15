@@ -19,10 +19,12 @@ type diffBuilt struct {
 	baseFile, otherFile string
 	store               *repository.DiffStore
 	entries             []domain.DiffEntry
+	browse              repository.DiffBrowsePage
 	err                 error
 }
 type diffPage struct {
 	entries []domain.DiffEntry
+	browse  repository.DiffBrowsePage
 	start   int64
 	last    bool
 	err     error
@@ -108,15 +110,22 @@ func (m model) diffCommand(ctx context.Context, base, other string) tea.Cmd {
 			return result
 		}
 		result.baseFile, result.otherFile = baseInfo.Path, otherInfo.Path
-		result.store, result.err = repository.BuildDiff(ctx, m.diffDir, a, b)
+		var progress func(domain.DiffProgress)
+		if m.diffProgress != nil {
+			progress = m.diffProgress.set
+		}
+		result.store, result.err = repository.BuildDiffWithProgress(ctx, m.diffDir, a, b, progress)
 		if result.err == nil && !result.store.Summary.Equal() && !result.store.Summary.CompletelyDifferent() {
-			result.entries, result.err = result.store.Page(ctx, 0, m.diffPageSize())
+			result.browse, result.err = result.store.Browse(ctx, nil, nil, nil, 0, m.diffPageSize())
+			result.entries = result.browse.Entries
 		}
 		return result
 	}
 }
 
 func (m *model) startDiff() tea.Cmd {
+	m.diffProgress = &diffProgressState{}
+	m.diffRunning = true
 	return m.operation(func(ctx context.Context) tea.Msg {
 		return m.diffCommand(ctx, m.diffBase, m.diffOther)()
 	})
@@ -125,14 +134,20 @@ func (m *model) startDiff() tea.Cmd {
 func (m *model) diffLoad(start int64, last bool) tea.Cmd {
 	store, limit := m.diffStore, m.diffPageSize()
 	return m.operation(func(ctx context.Context) tea.Msg {
-		entries, err := store.Page(ctx, start, limit)
-		return diffPage{entries: entries, start: start, last: last, err: err}
+		page, err := store.Browse(ctx, m.diffPath, m.diffAfter, nil, start, limit)
+		return diffPage{entries: page.Entries, browse: page, start: start, last: last, err: err}
 	})
 }
 
 func (m model) updateDiff(key string) (tea.Model, tea.Cmd) {
 	if m.diffStore == nil {
 		return m, nil
+	}
+	if (key == "esc" || key == "left" || key == "backspace") && len(m.diffPath) > 0 {
+		m.diffPath = m.diffPath[:len(m.diffPath)-1]
+		m.diffAfter = nil
+		m.diffHistory = nil
+		return m, m.diffLoad(0, false)
 	}
 	if key == "esc" || key == "q" {
 		store := m.diffStore
@@ -145,34 +160,63 @@ func (m model) updateDiff(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	pageSize := int64(m.diffPageSize())
+	total := len(m.diffEntries) + len(m.diffBrowse.Buckets)
+	next := func() (tea.Model, tea.Cmd) {
+		if len(m.diffHistory) == 128 {
+			copy(m.diffHistory, m.diffHistory[1:])
+			m.diffHistory[127] = nil
+			m.diffHistory = m.diffHistory[:127]
+		}
+		m.diffHistory = append(m.diffHistory, m.diffAfter)
+		if len(m.diffBrowse.Buckets) > 0 {
+			m.diffAfter = m.diffBrowse.Buckets[len(m.diffBrowse.Buckets)-1].Name
+		}
+		return m, m.diffLoad(m.diffStart+pageSize, false)
+	}
+	previous := func(last bool) (tea.Model, tea.Cmd) {
+		if len(m.diffHistory) == 0 {
+			return m, nil
+		}
+		if len(m.diffHistory) > 0 {
+			m.diffAfter = m.diffHistory[len(m.diffHistory)-1]
+			m.diffHistory = m.diffHistory[:len(m.diffHistory)-1]
+		}
+		return m, m.diffLoad(max(0, m.diffStart-pageSize), last)
+	}
 	switch key {
 	case "down", "j":
-		if m.diffSelected+1 < len(m.diffEntries) {
+		if m.diffSelected+1 < total {
 			m.diffSelected++
-		} else if m.diffStart+int64(len(m.diffEntries)) < m.diffStore.Count {
-			return m, m.diffLoad(m.diffStart+int64(len(m.diffEntries)), false)
+		} else if m.diffBrowse.Next != nil || m.diffStart+int64(len(m.diffEntries)) < m.diffBrowse.Count {
+			return next()
 		}
 	case "up", "k":
 		if m.diffSelected > 0 {
 			m.diffSelected--
 		} else if m.diffStart > 0 {
-			return m, m.diffLoad(max(0, m.diffStart-pageSize), true)
+			return previous(true)
 		}
 	case "n", "pgdown":
-		if m.diffStart+int64(len(m.diffEntries)) < m.diffStore.Count {
-			return m, m.diffLoad(m.diffStart+int64(len(m.diffEntries)), false)
+		if m.diffBrowse.Next != nil || m.diffStart+int64(len(m.diffEntries)) < m.diffBrowse.Count {
+			return next()
 		}
 	case "p", "pgup":
 		if m.diffStart > 0 {
-			return m, m.diffLoad(max(0, m.diffStart-pageSize), false)
+			return previous(false)
 		}
 	case "home":
+		m.diffAfter = nil
+		m.diffHistory = nil
 		return m, m.diffLoad(0, false)
-	case "end":
-		return m, m.diffLoad(max(0, ((m.diffStore.Count-1)/pageSize)*pageSize), true)
-	case "enter":
-		if len(m.diffEntries) > 0 {
-			e := m.diffEntries[m.diffSelected]
+	case "enter", "right":
+		if m.diffSelected < len(m.diffBrowse.Buckets) {
+			m.diffPath = append(append(domain.Path(nil), m.diffPath...), m.diffBrowse.Buckets[m.diffSelected].Name)
+			m.diffAfter = nil
+			m.diffHistory = nil
+			return m, m.diffLoad(0, false)
+		}
+		if m.diffSelected < total {
+			e := m.diffEntries[m.diffSelected-len(m.diffBrowse.Buckets)]
 			m.showDetail(fmt.Sprintf("%s\nBucket: %s\nKey: %s\n\nBASE (green):\nFile: %s\n%s\n\nOTHER (red):\nFile: %s\n%s", e.Kind, pathLabel(e.Path), utils.Display(e.Key, len(e.Key)), utils.SafeText(m.diffBaseFile), diffValue(e, true), utils.SafeText(m.diffOtherFile), diffValue(e, false)))
 			m.diffDetail = true
 		}
@@ -214,7 +258,7 @@ func (m model) diffView(title lipgloss.Style) string {
 	width := max(1, m.width-4)
 	green, red := diffColors()
 	var out strings.Builder
-	out.WriteString(title.Render("DATABASE DIFF") + "\n")
+	out.WriteString(title.Render(clip("DIFF · "+pathLabel(m.diffPath), width)) + "\n")
 	out.WriteString(green.Render(clip("BASE · "+m.diffBase, width)) + "\n")
 	out.WriteString(red.Render(clip("OTHER · "+m.diffOther, width)) + "\n")
 	if m.diffStore == nil {
@@ -235,8 +279,17 @@ func (m model) diffView(title lipgloss.Style) string {
 		return out.String()
 	}
 	top := max(0, m.diffSelected-m.diffPageSize()+1)
-	for i := top; i < min(len(m.diffEntries), top+m.diffPageSize()); i++ {
-		e := m.diffEntries[i]
+	for i := top; i < min(len(m.diffEntries)+len(m.diffBrowse.Buckets), top+m.diffPageSize()); i++ {
+		if i < len(m.diffBrowse.Buckets) {
+			b := m.diffBrowse.Buckets[i]
+			marker := "  "
+			if i == m.diffSelected {
+				marker = "> "
+			}
+			out.WriteString(clip(fmt.Sprintf("%s[+] %s (%d changes)", marker, utils.Display(b.Name, 256), b.Count), width) + "\n\n\n\n")
+			continue
+		}
+		e := m.diffEntries[i-len(m.diffBrowse.Buckets)]
 		marker := "  "
 		if i == m.diffSelected {
 			marker = "› "

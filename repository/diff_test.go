@@ -47,6 +47,14 @@ func TestDiffStorePaginationAndCleanup(t *testing.T) {
 	if store.Count != 40 {
 		t.Fatal(store.Count)
 	}
+	root, err := store.Browse(context.Background(), nil, nil, nil, 0, 7)
+	if err != nil || len(root.Buckets) != 1 || string(root.Buckets[0].Name) != "root" || root.Buckets[0].Count != 40 {
+		t.Fatalf("hierarchy root: %+v %v", root, err)
+	}
+	local, err := store.Browse(context.Background(), path, nil, nil, 11, 7)
+	if err != nil || len(local.Entries) != 7 || local.Count != 40 || string(local.Entries[0].Key) != "011" {
+		t.Fatalf("local page: %+v %v", local, err)
+	}
 	for _, start := range []int64{0, 11, 39, 40} {
 		entries, err := store.Page(context.Background(), start, 7)
 		if err != nil {

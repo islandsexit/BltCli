@@ -34,6 +34,9 @@ Enter in RECORDS opens a wrapped value preview. ↑ / ↓ scroll, Page Up / Page
 Keys wrap over up to three table lines; values use up to two more. Enter shows the complete key and a value preview of up to 64 KiB; export preserves the complete value.
 Record keys wrap across the full row width; Enter shows the complete key without truncation. Leaf buckets automatically focus RECORDS when opened.
 r creates or replaces a record. e edits the selected record. d deletes it after confirmation. Editing and deletion apply to the RECORDS panel.
+The multiline record editor formats and highlights JSON. Enter inserts a line, Tab inserts two spaces, Shift+Tab focuses the key. Arrows and Page Up/Down navigate; Home/End move within a line, Ctrl+Home/End through the document.
+Ctrl+S saves compact JSON; F4 or Ctrl+F validates and formats. Formatting preserves numeric tokens, duplicate fields and string contents. F6 switches JSON/text/hex modes. Esc discards the draft. Invalid JSON in JSON mode blocks saving; failed writes preserve the draft.
+The value edit limit is 1 MiB decoded. Binary values open in hex mode; prefixes typed in text values are literal text. JSON/text saves compact valid JSON; hex saves exact bytes.
 
 Search and statistics
 g or Ctrl+F opens database-wide search. Choose record keys, record values, or buckets with ←/→, then Tab to enter the substring and Enter to search.
@@ -56,8 +59,8 @@ Imports commit bounded batches. Already committed batches remain after an error 
 Dialog editing
 Tab / Shift+Tab switch fields. ← / → and Home / End move the text cursor.
 Backspace / Delete remove characters. Ctrl+U clears a field; Ctrl+K removes text after the cursor.
-Long fields wrap and scroll to keep the cursor visible. Enter submits; Esc cancels.
-Keys and values accept plain text, text:, hex:, and base64: prefixes. Other bytes are preserved exactly.
+Long fields wrap and scroll to keep the cursor visible. Enter submits ordinary dialogs; Esc cancels. Record editor saves use Ctrl+S.
+Keys and ordinary binary-input dialogs accept plain text, text:, hex:, and base64: prefixes. Editor values use the displayed mode.
 Destructive dialogs require typing yes. Read-only databases reject writes.
 
 Help and cancellation
@@ -287,6 +290,9 @@ func (m model) contextHints() (string, string) {
 		return "Esc cancel operation · h help", "Ctrl+C quit"
 	}
 	if m.modal != nil {
+		if m.modal.editor != nil {
+			return "↑↓←→ move · Enter newline · F4 format", "Ctrl+S save · Shift+Tab key · Esc cancel"
+		}
 		if m.modal.kind == "global-search" {
 			return "←→ choose type · Tab query", "Enter find · Esc cancel · F1 help"
 		}
@@ -304,7 +310,7 @@ func (m model) contextHints() (string, string) {
 		return "←→ edit · Tab field · Ctrl+U clear", "Enter " + action + " · Esc cancel · F1 help"
 	}
 	if m.diffOpen && m.detail == "" {
-		return "↑↓ select · Enter inspect · PgUp/PgDn · Home/End", "Esc close diff · h help · F2 full error"
+		return "↑↓ select · Enter/→ open · PgUp/PgDn", "←/Esc parent · q close diff · h help"
 	}
 	if m.detail != "" {
 		if m.diffDetail {

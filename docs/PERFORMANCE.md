@@ -39,6 +39,20 @@ The checked-in benchmarks are a repeatable baseline. They do not demonstrate a c
 
 ## Local baseline
 
+The end-to-end `BenchmarkBuildDiff` includes hierarchy indexing and cleanup for
+2,047 differences in nested buckets. [Before/after samples](BENCHMARK_DIFF.txt)
+record the replacement of per-difference synchronized writes and duplicate
+previews with bounded batches and spool offsets. For 4 KiB values, three local
+runs changed from 8.55–9.57 s/op to 0.278–0.355 s/op. These recently generated
+fixtures have uncontrolled cache state and do not establish multi-GB timings
+or RSS. `BenchmarkEditorViewport` renders a bounded window of a roughly 1 MiB
+document; its allocations should depend on viewport size, not document length.
+
+```sh
+go test ./repository -run '^$' -bench BenchmarkBuildDiff -benchmem -count 3
+go test ./tui -run '^$' -bench BenchmarkEditorViewport -benchmem
+```
+
 Database comparison has a cursor benchmark:
 
 ```sh

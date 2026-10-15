@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"time"
 
 	"github.com/islandsexit/BltCli/domain"
 	bolt "go.etcd.io/bbolt"
@@ -52,6 +53,37 @@ func diffTransactions(a, b *BoltDBAdapter, fn func(*bolt.Tx, *bolt.Tx) error) (e
 // Entries reference transaction-owned bytes: emit must serialize or copy them
 // before returning. Preview offsets identify context near the first difference.
 func Diff(ctx context.Context, base, other *BoltDBAdapter, emit func(domain.DiffEntry) error) (summary domain.DiffSummary, err error) {
+	return DiffWithProgress(ctx, base, other, emit, nil)
+}
+
+// DiffWithProgress reports throttled snapshots without a preliminary full scan.
+// The callback runs synchronously and must not retain transaction-owned data.
+func DiffWithProgress(ctx context.Context, base, other *BoltDBAdapter, emit func(domain.DiffEntry) error, progress func(domain.DiffProgress)) (summary domain.DiffSummary, err error) {
+	started := time.Now()
+	var processed, compared, total uint64
+	if progress != nil {
+		for _, db := range []*BoltDBAdapter{base, other} {
+			info, e := db.Info()
+			if e != nil {
+				return summary, e
+			}
+			total += uint64(max(0, info.Size-int64(info.FreeBytes)))
+		}
+	}
+	lastReport := time.Time{}
+	report := func(force bool, partial uint64) {
+		if progress == nil {
+			return
+		}
+		now := time.Now()
+		if !force && now.Sub(lastReport) < 100*time.Millisecond {
+			return
+		}
+		lastReport = now
+		progress(domain.DiffProgress{Phase: "compare", ProcessedBytes: processed + partial, EstimatedBytes: total, Compared: compared, Differences: summary.Differences, Elapsed: now.Sub(started), PhaseElapsed: now.Sub(started)})
+	}
+	report(true, 0)
+	defer func() { report(true, 0) }()
 	if base == other {
 		return summary, base.tx(false, func(*bolt.Tx) error { return ctx.Err() })
 	}
@@ -71,16 +103,26 @@ func Diff(ctx context.Context, base, other *BoltDBAdapter, emit func(domain.Diff
 					return nil
 				}
 				scanned++
+				compared++
+				work := uint64(len(a)) + uint64(len(b))
+				if ap {
+					work += uint64(len(key))
+				}
+				if bp {
+					work += uint64(len(key))
+				}
 				valueEqual, mismatch := true, 0
 				if kind == "record" && ap && bp {
 					var err error
-					valueEqual, mismatch, err = diffValues(ctx, a, b)
+					valueEqual, mismatch, err = diffValuesProgress(ctx, a, b, func(n int) { report(false, uint64(n)*2) })
 					if err != nil {
 						return err
 					}
 				} else {
 					valueEqual = bytes.Equal(a, b)
 				}
+				processed += work
+				report(false, 0)
 				equal := ap && bp && valueEqual && as == bs && kind != "type"
 				if kind == "record" || kind == "type" {
 					summary.Records++
@@ -164,12 +206,19 @@ func Diff(ctx context.Context, base, other *BoltDBAdapter, emit func(domain.Diff
 }
 
 func diffValues(ctx context.Context, a, b []byte) (bool, int, error) {
+	return diffValuesProgress(ctx, a, b, nil)
+}
+
+func diffValuesProgress(ctx context.Context, a, b []byte, progress func(int)) (bool, int, error) {
 	length := min(len(a), len(b))
 	for start := 0; start < length; start += 64 << 10 {
 		if err := ctx.Err(); err != nil {
 			return false, 0, err
 		}
 		end := min(length, start+(64<<10))
+		if progress != nil {
+			progress(start)
+		}
 		if !bytes.Equal(a[start:end], b[start:end]) {
 			for i := start; i < end; i++ {
 				if a[i] != b[i] {

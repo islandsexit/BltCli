@@ -74,7 +74,28 @@ Record keys use the full row width and wrap over up to three table lines; values
 
 Database-wide search retains only the requested page and a bounded value preview, with at most 128 previous-page checkpoints. It closes its read transaction after at most 1,024 inspected entries and resumes with a binary-safe path/key checkpoint. This bounds per-transaction bucket caches and permits page reclamation during long scans. Searches check cancellation during traversal. Results across scan blocks and later pages are not a single atomic snapshot: concurrent writes can change later matches. No entire database or record collection is loaded into memory.
 
-Dialogs accept the same binary encodings as the CLI. Use Tab to change fields, arrows/Home/End to move the cursor, Ctrl+U to clear a field, and Enter to submit. Long fields wrap and scroll to keep the cursor visible. In a text field, `h` types a character; `F1` opens help, and `h` or Esc closes help while preserving the dialog. Deletions require typing `yes`. Editing opens printable UTF-8 as `text:` and other data as `hex:` to preserve bytes exactly. Terminal controls in stored data are escaped. Themes adapt to the terminal background.
+Ordinary dialogs accept the same binary encodings as the CLI. Use Tab to change fields, arrows/Home/End to move the cursor, Ctrl+U to clear a field, and Enter to submit. Long fields wrap and scroll to keep the cursor visible. In a text field, `h` types a character; `F1` opens help, and `h` or Esc closes help while preserving the dialog. Deletions require typing `yes`. Terminal controls in stored data are escaped. Themes adapt to the terminal background.
+
+### Record editor
+
+`r` creates/replaces a record; `e` opens the selected record in the multiline editor. Keys accept `text:`, `hex:`, and `base64:` encodings. Values use explicit text, JSON, or hex modes; prefixes typed into a text value are literal text. UTF-8 values retain line breaks, and binary values open in hex mode. The decoded value limit is 1 MiB (up to 2 MiB of hex characters). Larger values can be modified through the CLI.
+
+Valid JSON opens with two-space indentation and syntax highlighting. Formatting is only for editing: saving valid JSON from JSON or text mode uses compact JSON. Whitespace inside strings, numeric tokens (including large integers), duplicate fields, and field order are preserved. Invalid JSON in JSON mode blocks saving and reports a line and column. Hex mode preserves bytes exactly, including JSON whitespace.
+
+| Key | Action |
+|---|---|
+| Enter in key field / Tab | Focus the value |
+| Enter in value | New line with existing indentation |
+| Tab in value | Insert two spaces |
+| Shift+Tab | Focus the key |
+| Arrows / Page Up/Down | Move within the document |
+| Home/End / Ctrl+Home/End | Line start/end / document start/end |
+| F4 / Ctrl+F | Validate and format as JSON |
+| F6 | Switch JSON → text → hex → UTF-8 text/JSON |
+| Ctrl+S | Save atomically |
+| Esc | Discard draft and close |
+
+The editor renders and highlights a bounded window around the cursor. Indentation expansion is also limited to 1 MiB. Saving runs asynchronously; a failed or canceled write leaves the draft open. Opening or formatting a value does not write to the database. CLI put/import behavior is unchanged.
 
 Read-only databases show `READ ONLY` in the context line. Mutation hotkeys explain the restriction immediately; browsing, search, diff and export remain available. Error messages adapt to the available screen space; F2 opens the complete message when it does not fit.
 

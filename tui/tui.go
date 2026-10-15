@@ -40,6 +40,7 @@ type dialog struct {
 	fields      []field
 	positions   []int
 	selected    int
+	editor      *valueEditor
 }
 type model struct {
 	ctx                                        context.Context
@@ -84,11 +85,17 @@ type model struct {
 	searchSelected, searchTop                  int
 	searchSelectLast                           bool
 	diffDir                                    string
+	diffProgress                               *diffProgressState
+	diffRunning                                bool
 	initialDiff                                []string
 	diffStore                                  *repository.DiffStore
 	diffBase, diffOther                        string
 	diffBaseFile, diffOtherFile                string
 	diffEntries                                []domain.DiffEntry
+	diffPath                                   domain.Path
+	diffBrowse                                 repository.DiffBrowsePage
+	diffAfter                                  []byte
+	diffHistory                                [][]byte
 	diffStart                                  int64
 	diffSelected                               int
 	diffOpen                                   bool
@@ -273,6 +280,9 @@ func (m *model) form(kind, title string, fields ...field) {
 		positions[i] = len(f.value)
 	}
 	m.modal = &dialog{kind: kind, title: title, fields: fields, positions: positions}
+	if kind == "put" && len(fields) == 2 {
+		m.modal.initEditor()
+	}
 }
 func binary(b []byte) string { return "hex:" + hex.EncodeToString(b) }
 func editable(b []byte) string {
@@ -393,6 +403,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.notice = v.text
 		m.noticeError = false
+		return m, m.reload()
+	case editorSaved:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+			return m, nil
+		}
+		m.modal = nil
+		m.notice = "Record saved"
 		return m, m.reload()
 	case opened:
 		m.busy = false
@@ -612,6 +632,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.setStatus("Value exceeds interactive edit limit (1 MiB); use CLI", true)
 				} else {
 					m.form("put", "Edit record", field{"Key", editable(r.Key)}, field{"Value", editable(r.Value)})
+					m.modal.selected = 1
 				}
 			}
 		case "d":
@@ -697,6 +718,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.reload()
 	case diffBuilt:
 		m.busy = false
+		m.diffRunning = false
 		m.cancel = nil
 		if v.err != nil {
 			m.setStatus(v.err.Error(), true)
@@ -705,6 +727,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.diffStore = v.store
 		m.diffBaseFile, m.diffOtherFile = v.baseFile, v.otherFile
 		m.diffEntries = v.entries
+		m.diffBrowse = v.browse
+		m.diffPath = nil
+		m.diffAfter, m.diffHistory = nil, nil
 		m.diffStart = 0
 		m.diffSelected = 0
 		m.diffOpen = true
@@ -717,10 +742,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.diffEntries = v.entries
+		m.diffBrowse = v.browse
 		m.diffStart = v.start
 		m.diffSelected = 0
 		if v.last {
-			m.diffSelected = max(0, len(v.entries)-1)
+			m.diffSelected = max(0, len(v.entries)+len(v.browse.Buckets)-1)
 		}
 	}
 	return m, nil
@@ -733,6 +759,9 @@ type statsResult struct {
 
 func (m model) updateDialog(v tea.KeyMsg) (tea.Model, tea.Cmd) {
 	d := m.modal
+	if d.kind == "put" && d.editor != nil {
+		return m.updateEditor(v)
+	}
 	if d.kind == "global-search" && d.selected == 0 {
 		choices := []string{"record keys", "record values", "buckets"}
 		index := 0
@@ -954,8 +983,19 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 			return fail(e)
 		}
 		val, e := utils.Decode(d.fields[1].value)
+		if d.editor != nil {
+			val, e = d.editorBytes()
+		}
 		if e != nil {
+			if d.editor != nil {
+				d.editor.message = e.Error()
+			}
 			return fail(e)
+		}
+		if d.editor != nil {
+			return m, m.operation(func(ctx context.Context) tea.Msg {
+				return editorSaved{err: db.WriteBatch(ctx, p, []domain.Record{{Key: k, Value: val}}, "overwrite")}
+			})
 		}
 		m.modal = nil
 		return m, m.operation(func(ctx context.Context) tea.Msg {
@@ -1048,6 +1088,8 @@ func (m model) View() string {
 	} else if m.errorOpen {
 		_, red := diffColors()
 		body.WriteString(m.overlayView(wrapLines(m.status, width), m.errorScroll, "ERROR", red))
+	} else if m.modal != nil && m.modal.editor != nil {
+		body.WriteString(m.editorView(title, hint))
 	} else if m.modal != nil {
 		d := m.modal
 		body.WriteString(title.Render(clip(d.title, width)) + "\n")
@@ -1073,6 +1115,8 @@ func (m model) View() string {
 				body.WriteByte('\n')
 			}
 		}
+	} else if m.diffRunning && m.diffProgress != nil {
+		body.WriteString(m.diffProgressView(title))
 	} else if m.detail != "" {
 		body.WriteString(m.overlayView(m.detailLines, m.detailScroll, "DETAILS", title))
 	} else if m.searchOpen {

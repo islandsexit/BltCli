@@ -1,0 +1,29 @@
+Local diff-index optimization sample, 2026-10-15
+Go 1.27.2, Windows/amd64
+CPU: AMD Ryzen 5 3500U with Radeon Vega Mobile Gfx
+Command: go test ./repository -run '^$' -bench BenchmarkBuildDiff -benchtime=1x -count=3
+Dataset: two generated databases, root/child nesting, 2048 records per database,
+one equal value and 2047 changed values; setup excluded from timing.
+Each operation includes comparison, disk spooling, hierarchy indexing, cleanup.
+OS caches uncontrolled (recently generated datasets); RAM, storage medium and
+filesystem not captured. No peak RSS, cold-cache or competitor measurements.
+
+Before: per-difference synchronized hierarchy write, duplicate previews
+BenchmarkBuildDiff/value=128-8    1  10025996800 ns/op  0.05 MB/s  62350072 B/op  366971 allocs/op
+BenchmarkBuildDiff/value=128-8    1   9011315800 ns/op  0.06 MB/s  62358088 B/op  366886 allocs/op
+BenchmarkBuildDiff/value=128-8    1   9196721500 ns/op  0.06 MB/s  62324544 B/op  366800 allocs/op
+BenchmarkBuildDiff/value=4096-8   1   9382537700 ns/op  1.79 MB/s 214117392 B/op  376414 allocs/op
+BenchmarkBuildDiff/value=4096-8   1   9569405300 ns/op  1.75 MB/s 214204400 B/op  376501 allocs/op
+BenchmarkBuildDiff/value=4096-8   1   8553450300 ns/op  1.96 MB/s 213818896 B/op  376286 allocs/op
+
+After: bounded post-comparison index batches and spool offsets
+BenchmarkBuildDiff/value=128-8    1     51066100 ns/op 10.26 MB/s   2703248 B/op   45812 allocs/op
+BenchmarkBuildDiff/value=128-8    1     54805500 ns/op  9.56 MB/s   2685312 B/op   45654 allocs/op
+BenchmarkBuildDiff/value=128-8    1     49549400 ns/op 10.58 MB/s   2694784 B/op   45670 allocs/op
+BenchmarkBuildDiff/value=4096-8   1    278068700 ns/op 60.31 MB/s  19112368 B/op   45639 allocs/op
+BenchmarkBuildDiff/value=4096-8   1    280197000 ns/op 59.85 MB/s  19151976 B/op   45666 allocs/op
+BenchmarkBuildDiff/value=4096-8   1    354531800 ns/op 47.30 MB/s  19119040 B/op   45611 allocs/op
+
+These short samples do not predict multi-gigabyte runtime or peak RSS. B/op is
+total allocated bytes, not peak live heap. Later minor traversal and UI changes
+are not included in this sample.
