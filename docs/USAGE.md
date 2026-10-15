@@ -2,6 +2,31 @@
 
 [Back to README](../README.md)
 
+## Export a value as JSON in the TUI
+
+Open a record with Enter, then press **Shift+E** (`E export JSON`).
+Edit the single **Output path** field and press Enter to export. It defaults
+to the full file path in the working directory from which the application
+was launched. You can change both the folder and filename in this field.
+Absolute and relative file paths are supported; the parent folder must
+already exist. The success message shows the complete output path.
+The default name joins the bucket path and record key with `_` and appends
+`.json`: `users / profiles / alice` becomes `users_profiles_alice.json`.
+Unsafe filename characters are replaced with `_`; suggested names are bounded.
+
+The export writes the complete stored JSON value, even when its preview is
+truncated, preserving whitespace and numeric tokens. It also works from search
+results and read-only databases. Non-JSON or non-UTF-8 values are rejected;
+use JSONL export for arbitrary binary records. Existing files are never
+overwritten. Failed or cancelled exports remove their newly created output;
+cleanup failures are reported. The filename dialog stays open after an error.
+
+Export runs asynchronously and supports Esc cancellation. It writes in 64 KiB
+chunks without copying the complete value into the Go heap. A read transaction
+stays open during validation and writing, so slow storage can delay page
+reclamation. JSON validation scans the value before writing; cancellation is
+checked before output and between chunks.
+
 ## CLI examples
 
 Flags precede positional arguments. Each standalone command owns and closes its database handle; opened handles persist only within a TUI session.

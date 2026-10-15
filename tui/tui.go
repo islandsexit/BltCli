@@ -15,6 +15,7 @@ import (
 	"github.com/islandsexit/BltCli/repository/adapters"
 	"github.com/islandsexit/BltCli/utils"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -416,6 +417,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailIsRecord = true
 		m.detailKey = v.key
 		return m, m.reload()
+	case valueExported:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus("JSON export failed: "+v.err.Error(), true)
+		} else {
+			m.modal = nil
+			m.setStatus("JSON exported to "+v.file, false)
+		}
+		return m, nil
 	case finished:
 		m.busy = false
 		m.cancel = nil
@@ -524,6 +535,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDiffDocument(key)
 		}
 		if m.detail != "" {
+			if key == "E" && m.detailIsRecord && m.detailKey != nil {
+				directory, err := os.Getwd()
+				if err != nil {
+					m.setStatus("Cannot determine output directory: "+err.Error(), true)
+					return m, nil
+				}
+				m.form("export-value-json", "Export value as JSON",
+					field{"Output path", filepath.Join(directory, valueJSONFilename(m.path, m.detailKey))})
+				return m, nil
+			}
 			if key == "e" && m.detailIsRecord && m.detailKey != nil {
 				return m, m.editPreviewRecord()
 			}
@@ -1136,6 +1157,16 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 			n, e := repository.Import(ctx, db, p, f, repository.ImportOptions{BatchSize: 500, BatchBytes: 8 << 20, MaxRecordBytes: 16 << 20, Duplicates: mode})
 			return finished{text: fmt.Sprintf("Committed input records: %d", n), err: errors.Join(e, f.Close())}
 		})
+	case "export-value-json":
+		if strings.TrimSpace(value) == "" {
+			return fail(errors.New("output path required"))
+		}
+		file, err := filepath.Abs(value)
+		if err != nil {
+			return fail(err)
+		}
+		cmd := m.exportValueJSON(file)
+		return m, cmd
 	case "export":
 		q := domain.Query{Prefix: m.prefix, Start: m.start, End: m.end, Contains: m.keyContains, ValueContains: m.valueContains}
 		m.modal = nil

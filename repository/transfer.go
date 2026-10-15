@@ -3,13 +3,53 @@ package repository
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/islandsexit/BltCli/domain"
 	"io"
+	"unicode/utf8"
 )
+
+// ExportValueJSON writes one complete JSON value without copying it off mmap.
+// The read snapshot remains open during validation and output; slow writers can
+// delay page reclamation. Invalid JSON and non-UTF-8 values are rejected.
+func ExportValueJSON(ctx context.Context, db domain.BoltDbAdapter, p domain.Path, key []byte, w io.Writer) error {
+	found := false
+	err := db.Walk(ctx, p, domain.Query{Start: key, Prefix: key, Limit: 1}, func(k, v []byte) error {
+		if !bytes.Equal(k, key) {
+			return domain.ErrKey
+		}
+		found = true
+		if !utf8.Valid(v) || !json.Valid(v) {
+			return errors.New("value is not valid UTF-8 JSON")
+		}
+		for len(v) > 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			n := min(len(v), 64<<10)
+			written, err := w.Write(v[:n])
+			if err != nil {
+				return err
+			}
+			if written != n {
+				return io.ErrShortWrite
+			}
+			v = v[n:]
+		}
+		return ctx.Err()
+	})
+	if err != nil {
+		return err
+	}
+	if !found {
+		return domain.ErrKey
+	}
+	return nil
+}
 
 // ImportOptions bounds both records and bytes in a transaction.
 type ImportOptions struct {

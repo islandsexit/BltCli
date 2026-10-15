@@ -62,6 +62,10 @@ Ctrl+R refreshes the current view.
 
 Import and export
 i imports a JSONL file into the current bucket. E exports the current filtered bucket to a new file.
+In a record preview, E exports the complete value as JSON. Edit Output path
+(defaults to a full file path in the launch working directory).
+The default filename joins bucket names and the key with underscores and adds .json.
+Only valid UTF-8 JSON is accepted. Existing files are never overwritten.
 JSONL key and value fields are base64 strings. Duplicate modes: overwrite, skip, error.
 Imports commit bounded batches. Already committed batches remain after an error or cancellation.
 
@@ -330,8 +334,11 @@ func (m model) contextHints() (string, string) {
 		if m.diffDetail {
 			return "↑↓ scroll · PgUp/PgDn page · Home/End", "Esc differences · h help"
 		}
-		if m.detailIsRecord && m.detailKey != nil && !m.info.ReadOnly {
-			return "↑↓ scroll · PgUp/PgDn · e edit", "Esc buckets · Enter close · h help"
+		if m.detailIsRecord && m.detailKey != nil {
+			if !m.info.ReadOnly {
+				return "↑↓ scroll · PgUp/PgDn · e edit", "E export JSON · Esc back · Enter close"
+			}
+			return "↑↓ scroll · PgUp/PgDn page · Home/End", "E export JSON · Esc back · Enter close"
 		}
 		return "↑↓ scroll · PgUp/PgDn page · Home/End", "Esc buckets · Enter close · h help"
 	}
