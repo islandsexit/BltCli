@@ -5,6 +5,20 @@ Supports nested buckets, binary keys and values, database-wide search,
 and JSONL import/export.
 Compare databases with `boltcli tui --diff base.db other.db`.
 
+## Screenshots
+
+Browse nested buckets and records:
+
+![BoltCLI record browser](docs/images/browser.png)
+
+Edit JSON with syntax highlighting:
+
+![BoltCLI JSON editor](docs/images/json-editor.png)
+
+Compare complete values side by side:
+
+![BoltCLI value comparison](docs/images/value-diff.png)
+
 ## Install
 
 With Go installed:
