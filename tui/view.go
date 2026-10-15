@@ -15,6 +15,11 @@ import (
 
 const helpText = `BOLTCLI — APPLICATION HELP
 
+Closing an editor, database, or completed comparison asks for confirmation. Esc at the database root asks to close its handle. q asks before quitting with databases open. Stopping a running comparison also asks.
+Confirmation defaults to Stay: arrows/Tab choose, Enter applies, Esc cancels. y confirms and n cancels (including layout aliases). Cancel preserves drafts and results. Returning from nested previews stays immediate. Ctrl+C quits immediately.
+
+Command shortcuts follow English/Russian keyboard positions (also standard Ukrainian/Belarusian): o/щ opens, e/у edits, h/р helps, F/А compares. Shift is significant. Text fields and pasted text remain literal.
+
 Getting started
 o opens an existing database. c creates a new database.
 Enter a file path, then press Enter. Existing files are never overwritten.
@@ -31,11 +36,15 @@ Esc in RECORDS or a record preview focuses BUCKETS if it has rows; when empty, E
 
 Records and long values
 Enter in RECORDS opens a wrapped value preview. ↑ / ↓ scroll, Page Up / Page Down scroll a screen, and Home / End jump to the beginning or end.
+Complete JSON previews have syntax colors for keys, strings, numbers, booleans and null, including search results. Large or partial ordinary previews keep plain formatting.
+In database diff, Enter opens complete side-by-side values: BASE removals are red, OTHER additions green, unchanged lines stay as context. Arrows scroll/pan, Page Up/Down page, Home/End jump, [/] jump change blocks. F4 switches raw/JSON display. Esc returns to differences.
+/ or Ctrl+F in diff searches the completed comparison by key across all buckets. Use exact or contains mode and binary encodings. Enter opens a matching value diff; Esc returns to buckets. No source comparison is repeated.
 Keys wrap over up to three table lines; values use up to two more. Enter shows the complete key and a value preview of up to 64 KiB; export preserves the complete value.
 Record keys wrap across the full row width; Enter shows the complete key without truncation. Leaf buckets automatically focus RECORDS when opened.
 r creates or replaces a record. e edits the selected record. d deletes it after confirmation. Editing and deletion apply to the RECORDS panel.
+e / у in a record content preview edits the viewed key, including records opened from search. Esc asks before discarding and returning to the preview; Ctrl+S saves and refreshes it. Read-only databases and diff previews cannot be edited.
 The multiline record editor formats and highlights JSON. Enter inserts a line, Tab inserts two spaces, Shift+Tab focuses the key. Arrows and Page Up/Down navigate; Home/End move within a line, Ctrl+Home/End through the document.
-Ctrl+S saves compact JSON; F4 or Ctrl+F validates and formats. Formatting preserves numeric tokens, duplicate fields and string contents. F6 switches JSON/text/hex modes. Esc discards the draft. Invalid JSON in JSON mode blocks saving; failed writes preserve the draft.
+Ctrl+S saves compact JSON; F4 or Ctrl+F validates and formats. Formatting preserves numeric tokens, duplicate fields and string contents. F6 switches JSON/text/hex modes. Esc asks before discarding the draft. Invalid JSON in JSON mode blocks saving; failed writes preserve the draft.
 The value edit limit is 1 MiB decoded. Binary values open in hex mode; prefixes typed in text values are literal text. JSON/text saves compact valid JSON; hex saves exact bytes.
 
 Search and statistics
@@ -213,10 +222,7 @@ func (m model) statusExtraRows() int {
 
 func (m model) overlayHeight() int { return max(1, m.height-9-m.statusExtraRows()) }
 func (m *model) showDetail(text string) {
-	m.detail = text
-	m.detailIsRecord = false
-	m.detailScroll = 0
-	m.wrapDetail()
+	m.showHighlightedDetail(text, nil)
 }
 func wrapLines(text string, width int) []string {
 	var lines []string
@@ -228,9 +234,11 @@ func wrapLines(text string, width int) []string {
 func (m *model) wrapDetail() {
 	if m.detail == "" {
 		m.detailLines = nil
+		m.detailStyledLines = nil
 		return
 	}
 	m.detailLines = wrapLines(m.detail, max(1, m.width-4))
+	m.detailStyledLines = wrapHighlightedDetail(m.detail, m.detailJSON, max(1, m.width-4))
 	m.detailScroll = min(m.detailScroll, max(0, len(m.detailLines)-m.overlayHeight()))
 }
 func (m model) helpLines() []string { return wrapLines(helpText, max(1, m.width-4)) }
@@ -309,12 +317,21 @@ func (m model) contextHints() (string, string) {
 		}
 		return "←→ edit · Tab field · Ctrl+U clear", "Enter " + action + " · Esc cancel · F1 help"
 	}
+	if m.diffDocument != nil {
+		return "↑↓ scroll · ←→ pan · [/] change", "F4 raw/JSON · F6 hex · / find · Esc back"
+	}
+	if m.diffSearchOpen && m.detail == "" {
+		return "↑↓ select · Enter full diff · PgUp/PgDn", "/ find key · Esc buckets · h help"
+	}
 	if m.diffOpen && m.detail == "" {
-		return "↑↓ select · Enter/→ open · PgUp/PgDn", "←/Esc parent · q close diff · h help"
+		return "↑↓ select · Enter/→ open · / find key", "←/Esc parent · q close diff · h help"
 	}
 	if m.detail != "" {
 		if m.diffDetail {
 			return "↑↓ scroll · PgUp/PgDn page · Home/End", "Esc differences · h help"
+		}
+		if m.detailIsRecord && m.detailKey != nil && !m.info.ReadOnly {
+			return "↑↓ scroll · PgUp/PgDn · e edit", "Esc buckets · Enter close · h help"
 		}
 		return "↑↓ scroll · PgUp/PgDn page · Home/End", "Esc buckets · Enter close · h help"
 	}
@@ -459,11 +476,11 @@ func (m model) overlayView(lines []string, offset int, title string, heading lip
 	green, red := diffColors()
 	if m.diffDetail {
 		for _, line := range lines[:offset] {
-			if line == "BASE (green):" {
-				diffStyle = green
-			}
-			if line == "OTHER (red):" {
+			if line == "BASE (red):" {
 				diffStyle = red
+			}
+			if line == "OTHER (green):" {
+				diffStyle = green
 			}
 		}
 	}
@@ -478,17 +495,23 @@ func (m model) overlayView(lines []string, offset int, title string, heading lip
 	for i := 0; i < height; i++ {
 		if offset+i < len(lines) {
 			line := lines[offset+i]
+			styled := title == "DETAILS" && len(m.detailStyledLines) == len(lines) && m.detailStyledLines[offset+i] != line
+			if styled {
+				line = m.detailStyledLines[offset+i]
+			}
 			if title == "DETAILS" && m.detailIsRecord && offset+i < valueStart {
 				line = heading.Render(line)
 			}
 			if title == "DETAILS" && m.diffDetail {
-				if line == "BASE (green):" {
-					diffStyle = green
-				}
-				if line == "OTHER (red):" {
+				if line == "BASE (red):" {
 					diffStyle = red
 				}
-				line = diffStyle.Render(line)
+				if line == "OTHER (green):" {
+					diffStyle = green
+				}
+				if !styled {
+					line = diffStyle.Render(line)
+				}
 			}
 			content.WriteString(line)
 		}

@@ -56,10 +56,31 @@ func BuildDiffWithProgress(ctx context.Context, dir string, a, b *adapters.BoltD
 		if err != nil {
 			err = errors.Join(err, store.Remove())
 			store = nil
-		} else if store.Summary.Equal() || store.Summary.CompletelyDifferent() {
+		} else if store.Summary.Equal() {
 			err = store.Remove()
 		}
 	}()
+	values, err := os.OpenFile(store.Index+".values", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return store, err
+	}
+	defer func() { err = errors.Join(err, values.Close()) }()
+	vw := bufio.NewWriterSize(values, 64<<10)
+	var valueOffset int64
+	writeValue := func(value []byte) error {
+		for len(value) > 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			n := min(len(value), 64<<10)
+			if _, err := vw.Write(value[:n]); err != nil {
+				return err
+			}
+			valueOffset += int64(n)
+			value = value[n:]
+		}
+		return nil
+	}
 	dw, iw := bufio.NewWriterSize(data, 64<<10), bufio.NewWriterSize(index, 64<<10)
 	cw := &countedWriter{w: dw}
 	encoder := json.NewEncoder(cw)
@@ -68,7 +89,15 @@ func BuildDiffWithProgress(ctx context.Context, dir string, a, b *adapters.BoltD
 	if progress != nil {
 		observe = func(p domain.DiffProgress) { comparison = p; progress(p) }
 	}
-	store.Summary, err = adapters.DiffWithProgress(ctx, a, b, func(entry domain.DiffEntry) error {
+	store.Summary, err = adapters.DiffWithValues(ctx, a, b, func(entry domain.DiffEntry, base, other []byte) error {
+		entry.BaseOffset = valueOffset
+		if err := writeValue(base); err != nil {
+			return err
+		}
+		entry.OtherOffset = valueOffset
+		if err := writeValue(other); err != nil {
+			return err
+		}
 		var offset [8]byte
 		binary.LittleEndian.PutUint64(offset[:], cw.n)
 		if _, e := iw.Write(offset[:]); e != nil {
@@ -83,11 +112,11 @@ func BuildDiffWithProgress(ctx context.Context, dir string, a, b *adapters.BoltD
 	if err != nil {
 		return store, err
 	}
-	err = errors.Join(dw.Flush(), iw.Flush())
+	err = errors.Join(dw.Flush(), iw.Flush(), vw.Flush())
 	if err != nil {
 		return store, err
 	}
-	if !store.Summary.Equal() && !store.Summary.CompletelyDifferent() {
+	if !store.Summary.Equal() {
 		err = store.buildBrowse(ctx, started, comparison.Compared, progress)
 	}
 	if err == nil && progress != nil {
@@ -104,7 +133,7 @@ func (s *DiffStore) Page(ctx context.Context, start int64, limit int) (entries [
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
-	if s.Summary.Equal() || s.Summary.CompletelyDifferent() {
+	if s.Summary.Equal() {
 		return nil, nil
 	}
 	if start >= s.Count {
@@ -152,5 +181,5 @@ func (s *DiffStore) Remove() error {
 		}
 		return err
 	}
-	return errors.Join(remove(s.Path), remove(s.Index), remove(s.Index+".browse"))
+	return errors.Join(remove(s.Path), remove(s.Index), remove(s.Index+".browse"), remove(s.Index+".values"))
 }

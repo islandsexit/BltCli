@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -57,6 +58,21 @@ func diffNode(tx *bolt.Tx, path domain.Path, create bool) (*bolt.Bucket, error) 
 
 // indexBrowse stores only an offset; previews live once in the JSONL spool.
 func indexBrowse(tx *bolt.Tx, entry domain.DiffEntry, offset uint64) error {
+	if key := diffEntryKey(entry); len(key) > 0 {
+		keys, err := tx.CreateBucketIfNotExists([]byte("keys"))
+		if err != nil {
+			return err
+		}
+		hash := sha256.Sum256(key)
+		var indexKey [40]byte
+		copy(indexKey[:32], hash[:])
+		binary.BigEndian.PutUint64(indexKey[32:], offset)
+		var value [8]byte
+		binary.LittleEndian.PutUint64(value[:], offset)
+		if err = keys.Put(indexKey[:], value[:]); err != nil {
+			return err
+		}
+	}
 	node, err := diffNode(tx, nil, true)
 	if err != nil {
 		return err
@@ -151,7 +167,7 @@ func (s *DiffStore) Browse(ctx context.Context, path domain.Path, after, contain
 	if err = ctx.Err(); err != nil {
 		return page, err
 	}
-	if s.Summary.Equal() || s.Summary.CompletelyDifferent() {
+	if s.Summary.Equal() {
 		return page, nil
 	}
 	db, err := bolt.Open(s.Index+".browse", 0600, &bolt.Options{ReadOnly: true})

@@ -54,6 +54,7 @@ func TestNavigationAndDialogs(t *testing.T) {
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = next.(model)
+	m, _ = acceptExit(t, m)
 	if m.modal != nil {
 		t.Fatal("dialog did not close")
 	}

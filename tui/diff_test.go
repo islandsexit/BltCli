@@ -81,16 +81,16 @@ func TestDiffDialogPaginationDetailsAndReturn(t *testing.T) {
 	if m.diffStart == 0 {
 		t.Fatal("diff page did not advance")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = next.(model)
-	if !m.diffDetail || !strings.Contains(m.detail, "BASE (green):") || !strings.Contains(m.detail, "OTHER (red):") {
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = completeLoad(t, next.(model), cmd)
+	if !m.diffDetail || !strings.Contains(m.detail, "BASE (red):") || !strings.Contains(m.detail, "OTHER (green):") {
 		t.Fatal("diff detail missing")
 	}
 	if !strings.Contains(m.detail, "File: "+filepath.Join(dir, "a.db")) || !strings.Contains(m.detail, "File: "+filepath.Join(dir, "b.db")) {
 		t.Fatal("actual file paths missing from diff detail")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = next.(model)
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = completeLoad(t, next.(model), cmd)
 	if !m.diffOpen || m.detail != "" || len(m.path) != 1 {
 		t.Fatal("Esc from detail changed underlying browser")
 	}
@@ -102,6 +102,7 @@ func TestDiffDialogPaginationDetailsAndReturn(t *testing.T) {
 	}
 	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = next.(model)
+	m, cmd = acceptExit(t, m)
 	commands := cmd().(tea.BatchMsg)
 	next, reload := m.Update(commands[0]())
 	m = completeLoad(t, next.(model), reload)
@@ -192,6 +193,7 @@ func TestDiffCancelAndSameOpenFile(t *testing.T) {
 	cmd := m.startDiff()
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = next.(model)
+	m, _ = acceptExit(t, m)
 	m = completeLoad(t, m, cmd)
 	if !m.statusError || m.diffOpen || !strings.Contains(m.status, "canceled") {
 		t.Fatal("comparison not canceled")
@@ -220,10 +222,10 @@ func TestDiffLaunchOpensReadOnlyAndReleasesFiles(t *testing.T) {
 	next, cmd := m.Update(m.Init()())
 	m = completeLoad(t, next.(model), cmd)
 	if !m.diffOpen || !m.diffStore.Summary.CompletelyDifferent() || len(m.diffEntries) != 0 {
-		t.Fatal("launch did not show summary-only result")
+		t.Fatal("launch did not open completed comparison")
 	}
-	if _, err := os.Stat(m.diffStore.Path); !os.IsNotExist(err) {
-		t.Fatal("summary-only result retained data file")
+	if _, err := os.Stat(m.diffStore.Path); err != nil {
+		t.Fatal("completely different result lost searchable data", err)
 	}
 	if len(m.app.Names()) != 0 {
 		t.Fatal("comparison added browser handles")

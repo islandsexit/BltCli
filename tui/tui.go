@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -66,9 +67,13 @@ type model struct {
 	notice                                     string
 	noticeError                                bool
 	modal                                      *dialog
+	confirm                                    *exitConfirmation
 	detail                                     string
 	detailIsRecord                             bool
+	detailKey                                  []byte
 	detailLines                                []string
+	detailJSON                                 []detailJSONRange
+	detailStyledLines                          []string
 	detailScroll                               int
 	helpOpen                                   bool
 	helpScroll                                 int
@@ -100,6 +105,17 @@ type model struct {
 	diffSelected                               int
 	diffOpen                                   bool
 	diffDetail                                 bool
+	diffDocument                               *repository.DiffDocument
+	diffDocumentEntry                          domain.DiffEntry
+	diffRows                                   []repository.DiffLine
+	diffRowStart                               int64
+	diffColumn                                 int
+	diffSearchOpen                             bool
+	diffSearchKey                              []byte
+	diffSearchMode                             string
+	diffSearchPage                             repository.DiffSearchPage
+	diffSearchAfter                            []byte
+	diffSearchHistory                          [][]byte
 	errorOpen                                  bool
 	errorScroll                                int
 }
@@ -307,8 +323,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = v.Height
 		m.wrapDetail()
 		if !m.busy {
+			if m.diffDocument != nil {
+				return m, m.diffDocumentLoad(m.diffRowStart, 0)
+			}
 			if m.diffOpen {
-				if m.diffStore.Summary.Equal() || m.diffStore.Summary.CompletelyDifferent() {
+				if m.diffSearchOpen {
+					return m, m.loadDiffSearch(m.diffSearchAfter, false, nil)
+				}
+				if m.diffStore.Summary.Equal() {
 					return m, nil
 				}
 				return m, m.diffLoad(m.diffStart, false)
@@ -390,8 +412,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.searchOpen = false
 		m.searchPage = domain.SearchPage{}
 		m.focus = 1
-		m.showDetail(v.text)
+		m.showHighlightedDetail(v.text, v.jsonRanges)
 		m.detailIsRecord = true
+		m.detailKey = v.key
 		return m, m.reload()
 	case finished:
 		m.busy = false
@@ -412,6 +435,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.modal = nil
+		if m.detailIsRecord && m.detailKey != nil {
+			scroll := m.detailScroll
+			m.showRecordDetail(fmt.Sprintf("Key: %s\nValue (%d bytes):\n", utils.Display(v.key, len(v.key)), len(v.value)), v.value)
+			m.detailKey = v.key
+			m.detailScroll = min(scroll, max(0, len(m.detailLines)-m.overlayHeight()))
+		}
 		m.notice = "Record saved"
 		return m, m.reload()
 	case opened:
@@ -436,12 +465,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resetQueries()
 		return m, m.reload()
 	case tea.KeyMsg:
-		key := v.String()
+		// Windows console modifier key-downs (Ctrl/Alt, etc.) can arrive as
+		// character events with Char == 0. They are not text input. Preserve
+		// explicitly pasted NUL bytes instead of silently changing user data.
+		if v.Type == tea.KeyRunes && !v.Paste && len(v.Runes) == 1 && v.Runes[0] == 0 {
+			return m, nil
+		}
+		key := commandKey(v)
 		if key == "ctrl+c" {
 			if m.cancel != nil {
 				m.cancel()
 			}
 			return m, tea.Quit
+		}
+		if m.confirm != nil {
+			return m.updateConfirmation(key)
 		}
 		if key == "f1" || key == "h" && (m.modal == nil || m.helpOpen) {
 			m.helpOpen = !m.helpOpen
@@ -471,16 +509,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.busy {
 			if key == "esc" && m.cancel != nil {
-				m.cancel()
+				if m.diffRunning {
+					m.confirmExit("cancel-diff")
+				} else {
+					m.cancel()
+				}
 			}
 			return m, nil
 		}
+		if m.modal != nil {
+			return m.updateDialog(v)
+		}
+		if m.diffDocument != nil {
+			return m.updateDiffDocument(key)
+		}
 		if m.detail != "" {
+			if key == "e" && m.detailIsRecord && m.detailKey != nil {
+				return m, m.editPreviewRecord()
+			}
 			if key == "esc" || key == "enter" || key == "q" {
 				leaveRecord := key == "esc" && m.detailIsRecord
 				m.detail = ""
 				m.detailIsRecord = false
+				m.detailKey = nil
 				m.detailLines = nil
+				m.detailJSON = nil
+				m.detailStyledLines = nil
 				m.detailScroll = 0
 				m.diffDetail = false
 				if leaveRecord {
@@ -490,9 +544,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				scrollText(key, len(m.detailLines), m.overlayHeight(), &m.detailScroll)
 			}
 			return m, nil
-		}
-		if m.modal != nil {
-			return m.updateDialog(v)
 		}
 		if m.diffOpen {
 			return m.updateDiff(key)
@@ -517,6 +568,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.form("diff", "Compare databases", field{"Other database path (or open database name)", ""})
 			m.diffBase = name
 		case "q":
+			if len(m.app.Names()) > 0 {
+				m.confirmExit("quit")
+				return m, nil
+			}
 			return m, tea.Quit
 		case "g", "ctrl+f":
 			if m.info.Path != "" {
@@ -530,6 +585,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focus = 1 - m.focus
 			m.keepRecordVisible()
 		case "esc":
+			if len(m.path) == 0 && m.info.Path != "" {
+				m.confirmExit("database")
+				return m, nil
+			}
 			if m.focus == 1 {
 				return m, m.escapeRecords()
 			}
@@ -572,8 +631,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.focus == 1 && len(m.page.Records) > 0 {
 				r := m.page.Records[m.selected]
-				m.showDetail(fmt.Sprintf("Key: %s\nValue (%d bytes):\n%s", utils.Display(r.Key, len(r.Key)), len(r.Value), utils.ValuePreview(r.Value, 64<<10)))
-				m.detailIsRecord = true
+				m.showRecordDetail(fmt.Sprintf("Key: %s\nValue (%d bytes):\n", utils.Display(r.Key, len(r.Key)), len(r.Value)), r.Value)
+				m.detailKey = bytes.Clone(r.Key)
 			}
 		case "backspace":
 			return m, m.goParent()
@@ -586,10 +645,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			m.form("create-db", "Create database", field{"New file path", ""})
 		case "x":
-			name, _, e := m.app.Active()
-			if e == nil {
-				m.form("close", "Close active database", field{"Type yes to close " + name, ""})
-			}
+			m.confirmExit("database")
 		case "[", "]":
 			names := m.app.Names()
 			if len(names) > 0 {
@@ -706,8 +762,62 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.showDetail(v.text)
 		}
+	case recordEditLoaded:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+			return m, nil
+		}
+		m.form("put", "Edit record", field{"Key", editable(v.record.Key)}, field{"Value", editable(v.record.Value)})
+		m.modal.selected = 1
 	case diffRequested:
 		return m, m.startDiff()
+	case diffDocumentLoaded:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+			return m, nil
+		}
+		m.diffDocument = v.doc
+		m.diffDocumentEntry = v.entry
+		m.diffRows = v.rows
+		m.diffRowStart = 0
+		m.diffColumn = 0
+		m.setStatus("Complete snapshot · red removals / green additions · / find key", false)
+	case diffDocumentPage:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+			return m, nil
+		}
+		m.diffRows = v.rows
+		m.diffRowStart = v.start
+		m.setStatus("Complete snapshot · red removals / green additions · / find key", false)
+	case diffDocumentClosed:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+		} else {
+			m.setStatus("Returned to differences", false)
+		}
+	case diffSearchLoaded:
+		m.busy = false
+		m.cancel = nil
+		if v.err != nil {
+			m.setStatus(v.err.Error(), true)
+			return m, nil
+		}
+		m.diffSearchPage = v.page
+		m.diffSearchAfter = v.after
+		m.diffSelected = 0
+		if v.last {
+			m.diffSelected = max(0, len(v.page.Entries)-1)
+		}
+		m.setStatus(fmt.Sprintf("%d matching differences · stored comparison", len(v.page.Entries)), false)
 	case diffClosed:
 		m.busy = false
 		m.cancel = nil
@@ -725,6 +835,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.diffStore = v.store
+		m.diffSearchOpen = false
+		m.diffSearchPage = repository.DiffSearchPage{}
+		m.diffSearchHistory = nil
 		m.diffBaseFile, m.diffOtherFile = v.baseFile, v.otherFile
 		m.diffEntries = v.entries
 		m.diffBrowse = v.browse
@@ -770,7 +883,7 @@ func (m model) updateDialog(v tea.KeyMsg) (tea.Model, tea.Cmd) {
 				index = i
 			}
 		}
-		switch v.String() {
+		switch commandKey(v) {
 		case "left":
 			index = (index + len(choices) - 1) % len(choices)
 		case "right", " ":
@@ -851,6 +964,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	p := append(domain.Path{}, m.path...)
 	fail := func(e error) (tea.Model, tea.Cmd) { m.setStatus(e.Error(), true); return m, nil }
 	switch d.kind {
+	case "diff-search":
+		return m.submitDiffSearch()
 	case "diff":
 		if strings.TrimSpace(value) == "" {
 			return fail(errors.New("database path required"))
@@ -994,7 +1109,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		}
 		if d.editor != nil {
 			return m, m.operation(func(ctx context.Context) tea.Msg {
-				return editorSaved{err: db.WriteBatch(ctx, p, []domain.Record{{Key: k, Value: val}}, "overwrite")}
+				return editorSaved{err: db.WriteBatch(ctx, p, []domain.Record{{Key: k, Value: val}}, "overwrite"), key: k, value: val}
 			})
 		}
 		m.modal = nil
@@ -1047,6 +1162,11 @@ type opened struct{ err error }
 type deletedBucket struct{ err error }
 
 func (m model) View() string {
+	if m.confirm != nil {
+		background := m
+		background.confirm = nil
+		return m.confirmationView(background.View())
+	}
 	accent := lipgloss.AdaptiveColor{Light: "#5B21B6", Dark: "#C4B5FD"}
 	muted := lipgloss.AdaptiveColor{Light: "#475569", Dark: "#94A3B8"}
 	title := lipgloss.NewStyle().Bold(true).Foreground(accent)
@@ -1117,6 +1237,8 @@ func (m model) View() string {
 		}
 	} else if m.diffRunning && m.diffProgress != nil {
 		body.WriteString(m.diffProgressView(title))
+	} else if m.diffDocument != nil {
+		body.WriteString(m.diffDocumentView(title))
 	} else if m.detail != "" {
 		body.WriteString(m.overlayView(m.detailLines, m.detailScroll, "DETAILS", title))
 	} else if m.searchOpen {

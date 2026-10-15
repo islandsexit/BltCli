@@ -115,7 +115,7 @@ func (m model) diffCommand(ctx context.Context, base, other string) tea.Cmd {
 			progress = m.diffProgress.set
 		}
 		result.store, result.err = repository.BuildDiffWithProgress(ctx, m.diffDir, a, b, progress)
-		if result.err == nil && !result.store.Summary.Equal() && !result.store.Summary.CompletelyDifferent() {
+		if result.err == nil && !result.store.Summary.Equal() {
 			result.browse, result.err = result.store.Browse(ctx, nil, nil, nil, 0, m.diffPageSize())
 			result.entries = result.browse.Entries
 		}
@@ -143,6 +143,13 @@ func (m model) updateDiff(key string) (tea.Model, tea.Cmd) {
 	if m.diffStore == nil {
 		return m, nil
 	}
+	if m.diffSearchOpen {
+		return m.updateDiffSearch(key)
+	}
+	if key == "/" || key == "g" || key == "ctrl+f" {
+		m.form("diff-search", "Find differences by key", field{"Key (text:, hex:, base64:)", ""}, field{"Match: exact / contains", "exact"})
+		return m, nil
+	}
 	if (key == "esc" || key == "left" || key == "backspace") && len(m.diffPath) > 0 {
 		m.diffPath = m.diffPath[:len(m.diffPath)-1]
 		m.diffAfter = nil
@@ -150,13 +157,10 @@ func (m model) updateDiff(key string) (tea.Model, tea.Cmd) {
 		return m, m.diffLoad(0, false)
 	}
 	if key == "esc" || key == "q" {
-		store := m.diffStore
-		m.diffOpen = false
-		m.diffStore = nil
-		m.diffEntries = nil
-		return m, m.operation(func(context.Context) tea.Msg { err := store.Remove(); return diffClosed{err: err} })
+		m.confirmExit("diff")
+		return m, nil
 	}
-	if m.diffStore.Summary.Equal() || m.diffStore.Summary.CompletelyDifferent() {
+	if m.diffStore.Summary.Equal() {
 		return m, nil
 	}
 	pageSize := int64(m.diffPageSize())
@@ -217,14 +221,25 @@ func (m model) updateDiff(key string) (tea.Model, tea.Cmd) {
 		}
 		if m.diffSelected < total {
 			e := m.diffEntries[m.diffSelected-len(m.diffBrowse.Buckets)]
-			m.showDetail(fmt.Sprintf("%s\nBucket: %s\nKey: %s\n\nBASE (green):\nFile: %s\n%s\n\nOTHER (red):\nFile: %s\n%s", e.Kind, pathLabel(e.Path), utils.Display(e.Key, len(e.Key)), utils.SafeText(m.diffBaseFile), diffValue(e, true), utils.SafeText(m.diffOtherFile), diffValue(e, false)))
-			m.diffDetail = true
+			m.showDiffDetail(e)
+			return m, m.loadDiffDocument(e)
 		}
 	}
 	return m, nil
 }
 
 type diffClosed struct{ err error }
+
+func (m *model) closeDiff() tea.Cmd {
+	store := m.diffStore
+	m.diffOpen = false
+	m.diffStore = nil
+	m.diffEntries = nil
+	m.diffSearchPage = repository.DiffSearchPage{}
+	m.diffSearchHistory = nil
+	m.diffSearchKey = nil
+	return m.operation(func(context.Context) tea.Msg { return diffClosed{err: store.Remove()} })
+}
 
 func diffValue(e domain.DiffEntry, base bool) string {
 	present, value, size, sequence := e.OtherPresent, e.Other, e.OtherBytes, e.OtherSequence
@@ -255,12 +270,15 @@ func diffColors() (lipgloss.Style, lipgloss.Style) {
 }
 
 func (m model) diffView(title lipgloss.Style) string {
+	if m.diffSearchOpen {
+		return m.diffSearchView(title)
+	}
 	width := max(1, m.width-4)
 	green, red := diffColors()
 	var out strings.Builder
 	out.WriteString(title.Render(clip("DIFF · "+pathLabel(m.diffPath), width)) + "\n")
-	out.WriteString(green.Render(clip("BASE · "+m.diffBase, width)) + "\n")
-	out.WriteString(red.Render(clip("OTHER · "+m.diffOther, width)) + "\n")
+	out.WriteString(red.Render(clip("BASE · "+m.diffBase, width)) + "\n")
+	out.WriteString(green.Render(clip("OTHER · "+m.diffOther, width)) + "\n")
 	if m.diffStore == nil {
 		return out.String()
 	}
@@ -269,7 +287,7 @@ func (m model) diffView(title lipgloss.Style) string {
 		out.WriteString("\nDatabases are equal.\n")
 		return out.String()
 	}
-	if summary.CompletelyDifferent() {
+	if summary.CompletelyDifferent() && m.diffStore.Count == 0 {
 		out.WriteString("\nDatabases are completely different.\n")
 		if summary.Records == 0 {
 			out.WriteString("No identical buckets.\n")
@@ -300,8 +318,8 @@ func (m model) diffView(title lipgloss.Style) string {
 		}
 		heading := lipgloss.NewStyle().Bold(i == m.diffSelected)
 		out.WriteString(heading.Render(clip(marker+e.Kind+" · "+label, width)) + "\n")
-		out.WriteString(green.Render(clip("  BASE  · "+strings.ReplaceAll(diffValue(e, true), "\n", " "), width)) + "\n")
-		out.WriteString(red.Render(clip("  OTHER · "+strings.ReplaceAll(diffValue(e, false), "\n", " "), width)) + "\n")
+		out.WriteString(red.Render(clip("  BASE  · "+strings.ReplaceAll(diffValue(e, true), "\n", " "), width)) + "\n")
+		out.WriteString(green.Render(clip("  OTHER · "+strings.ReplaceAll(diffValue(e, false), "\n", " "), width)) + "\n")
 		if m.height >= 15+m.statusExtraRows() {
 			out.WriteByte('\n')
 		}

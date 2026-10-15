@@ -1,0 +1,30 @@
+Local complete-value diff sample, 2026-10-15
+Go 1.27.2, Windows/amd64
+CPU: AMD Ryzen 5 3500U with Radeon Vega Mobile Gfx
+Working tree based on 9bc07d9, after full snapshots and key search indexing.
+Minor subsequent byte-display/cancellation changes are not included in this sample.
+Command:
+go test ./repository -run '^$' -bench 'BenchmarkFullDiffDocument|BenchmarkBuildDiff' -benchtime=1x -count=3
+
+Datasets created immediately before timing; OS cache state uncontrolled.
+RAM, storage medium, filesystem and peak RSS were not recorded.
+BuildDiff: 2048 records per database, one equal and 2047 changed, nested buckets.
+FullDiffDocument: two values with 1000/100000 equal lines and a changed tail.
+Preparation of source databases and snapshots is excluded from FullDiffDocument;
+its timing includes aligned document generation, indexes and cleanup.
+
+BenchmarkBuildDiff/value=128-8              1   65159200 ns/op  8.04 MB/s  4602872 B/op   79717 allocs/op
+BenchmarkBuildDiff/value=128-8              1   58892700 ns/op  8.90 MB/s  4497504 B/op   77764 allocs/op
+BenchmarkBuildDiff/value=128-8              1   56877500 ns/op  9.21 MB/s  4491312 B/op   77743 allocs/op
+BenchmarkBuildDiff/value=4096-8             1  229726200 ns/op 73.00 MB/s 21758056 B/op   83507 allocs/op
+BenchmarkBuildDiff/value=4096-8             1  262575100 ns/op 63.86 MB/s 21883816 B/op   83540 allocs/op
+BenchmarkBuildDiff/value=4096-8             1  228777200 ns/op 73.30 MB/s 22109384 B/op   89201 allocs/op
+BenchmarkFullDiffDocument/lines=1000-8      1    5621500 ns/op  3.56 MB/s   630224 B/op    7174 allocs/op
+BenchmarkFullDiffDocument/lines=1000-8      1    3324200 ns/op  6.02 MB/s   624280 B/op    7110 allocs/op
+BenchmarkFullDiffDocument/lines=1000-8      1    5467800 ns/op  3.66 MB/s   624904 B/op    7116 allocs/op
+BenchmarkFullDiffDocument/lines=100000-8    1  197882900 ns/op 10.11 MB/s 28370464 B/op  703286 allocs/op
+BenchmarkFullDiffDocument/lines=100000-8    1  192350700 ns/op 10.40 MB/s 28370768 B/op  703290 allocs/op
+BenchmarkFullDiffDocument/lines=100000-8    1  200914600 ns/op  9.95 MB/s 28370816 B/op  703291 allocs/op
+
+B/op is total allocation over an operation, not peak live heap or resident RAM.
+No cold-cache, multi-gigabyte or competing-tool measurements were performed.

@@ -23,6 +23,7 @@ type DiffEntry struct {
 	Base, Other                 []byte
 	BaseBytes, OtherBytes       int
 	ValueOffset                 int
+	BaseOffset, OtherOffset     int64 `json:",omitempty"`
 	BaseSequence, OtherSequence uint64
 }
 

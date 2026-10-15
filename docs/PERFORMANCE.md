@@ -48,9 +48,20 @@ fixtures have uncontrolled cache state and do not establish multi-GB timings
 or RSS. `BenchmarkEditorViewport` renders a bounded window of a roughly 1 MiB
 document; its allocations should depend on viewport size, not document length.
 
+Full value comparison now also streams complete changed values to disk and
+builds an exact-key hash index. [Full-view samples](BENCHMARK_FULL_DIFF.txt)
+record three local trials: preparing a 100,000-line value document took
+0.192–0.201 s/op, versus 0.0033–0.0056 s/op for 1,000 lines. Alignment retains
+two 64-row windows and writes all aligned rows and their indexes to disk;
+these timing/allocation results are not measurements of peak heap or RSS.
+Complete snapshots add disk I/O proportional to changed value bytes, which
+the earlier preview-only sample did not include. JSON indentation and aligned
+row metadata can increase temporary file sizes beyond raw payload size.
+
 ```sh
 go test ./repository -run '^$' -bench BenchmarkBuildDiff -benchmem -count 3
 go test ./tui -run '^$' -bench BenchmarkEditorViewport -benchmem
+go test ./repository -run '^$' -bench BenchmarkFullDiffDocument -benchmem -count 3
 ```
 
 Database comparison has a cursor benchmark:

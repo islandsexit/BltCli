@@ -59,6 +59,12 @@ func Diff(ctx context.Context, base, other *BoltDBAdapter, emit func(domain.Diff
 // DiffWithProgress reports throttled snapshots without a preliminary full scan.
 // The callback runs synchronously and must not retain transaction-owned data.
 func DiffWithProgress(ctx context.Context, base, other *BoltDBAdapter, emit func(domain.DiffEntry) error, progress func(domain.DiffProgress)) (summary domain.DiffSummary, err error) {
+	return DiffWithValues(ctx, base, other, func(e domain.DiffEntry, _, _ []byte) error { return emit(e) }, progress)
+}
+
+// DiffWithValues exposes complete borrowed values for each difference. Callbacks
+// must stream or copy them before returning; they cannot outlive the transaction.
+func DiffWithValues(ctx context.Context, base, other *BoltDBAdapter, emit func(domain.DiffEntry, []byte, []byte) error, progress func(domain.DiffProgress)) (summary domain.DiffSummary, err error) {
 	started := time.Now()
 	var processed, compared, total uint64
 	if progress != nil {
@@ -94,6 +100,7 @@ func DiffWithProgress(ctx context.Context, base, other *BoltDBAdapter, emit func
 		}
 		var checkpoint *domain.SearchPosition
 		scanned := 0
+		var blockBytes uint64
 		err = diffTransactions(base, other, func(left, right *bolt.Tx) error {
 			event := func(path domain.Path, key, a, b []byte, ap, bp bool, kind string, as, bs uint64, ab, bb bool) error {
 				if err := ctx.Err(); err != nil {
@@ -105,6 +112,7 @@ func DiffWithProgress(ctx context.Context, base, other *BoltDBAdapter, emit func
 				scanned++
 				compared++
 				work := uint64(len(a)) + uint64(len(b))
+				blockBytes += work
 				if ap {
 					work += uint64(len(key))
 				}
@@ -140,11 +148,11 @@ func DiffWithProgress(ctx context.Context, base, other *BoltDBAdapter, emit func
 					}
 					leftStart, rightStart := min(offset, len(a)), min(offset, len(b))
 					entry := domain.DiffEntry{Path: path, Key: key, Kind: kind, BasePresent: ap, OtherPresent: bp, Base: a[leftStart:min(len(a), leftStart+4096)], Other: b[rightStart:min(len(b), rightStart+4096)], BaseBytes: len(a), OtherBytes: len(b), ValueOffset: offset, BaseSequence: as, OtherSequence: bs, BaseBucket: ab, OtherBucket: bb}
-					if err := emit(entry); err != nil {
+					if err := emit(entry, a, b); err != nil {
 						return err
 					}
 				}
-				if scanned >= 1024 {
+				if scanned >= 1024 || blockBytes >= 8<<20 {
 					checkpoint = position(path, key)
 					return errDiffBlock
 				}

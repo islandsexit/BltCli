@@ -20,9 +20,11 @@ type searchLoaded struct {
 	generation int
 }
 type searchDetail struct {
-	text string
-	path domain.Path
-	err  error
+	key        []byte
+	text       string
+	jsonRanges []detailJSONRange
+	path       domain.Path
+	err        error
 }
 
 func pathLabel(path domain.Path) string {
@@ -145,7 +147,8 @@ func (m model) updateSearch(key string) (tea.Model, tea.Cmd) {
 					return domain.ErrKey
 				}
 				found = true
-				result.text = fmt.Sprintf("Bucket: %s\nKey: %s\nValue (%d bytes):\n%s", pathLabel(hit.Path), utils.Display(key, len(key)), len(value), utils.ValuePreview(value, 64<<10))
+				result.key = bytes.Clone(key)
+				result.text, result.jsonRanges = recordDetailText(fmt.Sprintf("Bucket: %s\nKey: %s\nValue (%d bytes):\n", pathLabel(hit.Path), utils.Display(key, len(key)), len(value)), value)
 				return nil
 			})
 			if e != nil {

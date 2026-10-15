@@ -49,6 +49,14 @@ func TestEditorJSONFormattingAndCompactSave(t *testing.T) {
 	if err = json.Compact(&expected, original); err != nil {
 		t.Fatal(err)
 	}
+	// Windows console input can report the Ctrl modifier key-down itself as a
+	// KeyRunes event containing NUL, immediately before the actual Ctrl+S event.
+	draft := m.modal.fields[1].value
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0}})
+	m = next.(model)
+	if m.modal.fields[1].value != draft || m.modal.editor.dirty {
+		t.Fatal("modifier key-down inserted NUL into JSON")
+	}
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	m = next.(model)
 	commands := cmd().(tea.BatchMsg)

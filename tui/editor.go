@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/islandsexit/BltCli/domain"
 	"github.com/islandsexit/BltCli/utils"
 )
 
@@ -188,7 +190,56 @@ func (d *dialog) editorBytes() ([]byte, error) {
 	}
 }
 
-type editorSaved struct{ err error }
+type editorSaved struct {
+	err        error
+	key, value []byte
+}
+
+type recordEditLoaded struct {
+	record domain.Record
+	err    error
+}
+
+// editPreviewRecord loads the exact viewed key rather than the table selection.
+// The read transaction copies at most one edit-sized value and then closes.
+func (m *model) editPreviewRecord() tea.Cmd {
+	if m.info.ReadOnly {
+		m.setStatus("Database is read-only; editing is disabled", true)
+		return nil
+	}
+	_, db, err := m.app.Active()
+	if err != nil {
+		m.setStatus(err.Error(), true)
+		return nil
+	}
+	path, key := m.path, bytes.Clone(m.detailKey)
+	return m.operation(func(ctx context.Context) tea.Msg {
+		result := recordEditLoaded{}
+		info, err := db.Info()
+		if err != nil {
+			return recordEditLoaded{err: err}
+		}
+		if info.ReadOnly {
+			return recordEditLoaded{err: errors.New("database is read-only; editing is disabled")}
+		}
+		found := false
+		result.err = db.Walk(ctx, path, domain.Query{Start: key, Prefix: key, Limit: 1}, func(k, value []byte) error {
+			if !bytes.Equal(k, key) {
+				return domain.ErrKey
+			}
+			found = true
+			if len(value) > editLimit {
+				return errors.New("value exceeds interactive edit limit (1 MiB); use CLI")
+			}
+			result.record = domain.Record{Key: bytes.Clone(k), Value: bytes.Clone(value)}
+			return nil
+		})
+		if result.err == nil && !found {
+			result.err = domain.ErrKey
+		}
+		return result
+	})
+}
 
 func (m model) updateEditor(v tea.KeyMsg) (tea.Model, tea.Cmd) {
 	d := m.modal
@@ -197,7 +248,7 @@ func (m model) updateEditor(v tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.submit()
 	}
 	if key == "esc" {
-		m.modal = nil
+		m.confirmExit("editor")
 		return m, nil
 	}
 	if key == "f4" || key == "ctrl+f" {
